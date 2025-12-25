@@ -109,7 +109,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [roadmapProjects]);
 
   const login = (password: string) => {
-    if (password === 'WahajPlayzAdminPannel109') {
+    if (password === '.WahajPlayzWebsite109') {
       setIsAuthenticated(true);
       localStorage.setItem('wahaj_auth', 'true');
       return true;
