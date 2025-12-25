@@ -88,12 +88,12 @@ const Header: React.FC = () => {
         {/* CTA Button */}
         <div className="hidden md:block">
           <a 
-            href="https://ko-fi.com/wahajplayz" 
+            href="https://discord.gg/KF9cMSZ2hW" 
             target="_blank" 
             rel="noopener noreferrer"
             className="px-5 py-2 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-bold hover:shadow-[0_0_15px_rgba(168,85,247,0.5)] transition-all transform hover:scale-105 flex items-center gap-2"
           >
-            Support on Ko-fi <ExternalLink size={14} />
+            Join Discord Server <ExternalLink size={14} />
           </a>
         </div>
 

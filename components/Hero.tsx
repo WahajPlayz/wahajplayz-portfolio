@@ -76,7 +76,7 @@ const Hero: React.FC = () => {
             <div className="bg-white/20 p-1.5 rounded-full">
                <Coffee size={20} className="text-white" fill="currentColor" />
             </div>
-            Support me
+            Donate me a Coffee
           </a>
         </div>
       </div>

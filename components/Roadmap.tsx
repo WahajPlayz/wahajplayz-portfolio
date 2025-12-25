@@ -57,7 +57,6 @@ const Roadmap: React.FC = () => {
                   </div>
                   <span className="text-xs font-mono text-gray-400">{Math.round(progress)}%</span>
                 </div>
-
                 {/* Sections and Steps */}
                 <div className="space-y-8 flex-1">
                   {project.sections.map((section) => (
