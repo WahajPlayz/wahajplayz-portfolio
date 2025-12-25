@@ -122,13 +122,13 @@ const Header: React.FC = () => {
             </a>
           ))}
           <a 
-            href="https://ko-fi.com/wahajplayz"
+            href="https://discord.gg/KF9cMSZ2hW"
             target="_blank" 
             rel="noopener noreferrer"
             className="inline-block text-center w-full px-5 py-3 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-bold mt-4"
             onClick={() => setMobileMenuOpen(false)}
           >
-            Support on Ko-fi
+            Join Discord server
           </a>
         </div>
       )}
