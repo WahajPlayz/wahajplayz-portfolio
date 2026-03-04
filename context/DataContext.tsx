@@ -109,7 +109,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [roadmapProjects]);
 
   const login = (password: string) => {
-    if (password === '.WahajPlayzWebsite109') {
+    if (password === import.meta.env.VITE_ADMIN_PASSWORD) {
       setIsAuthenticated(true);
       localStorage.setItem('wahaj_auth', 'true');
       return true;
