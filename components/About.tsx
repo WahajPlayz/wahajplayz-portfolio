@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
 
 const About: React.FC = () => {
-  const { openAdmin } = useData();
+  const { openMemberPanel } = useData();
   const [clickCount, setClickCount] = useState(0);
 
   const handleSecretClick = () => {
     const newCount = clickCount + 1;
     setClickCount(newCount);
     if (newCount === 20) {
-      openAdmin();
+      openMemberPanel();
       setClickCount(0);
     }
   };

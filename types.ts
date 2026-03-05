@@ -47,3 +47,20 @@ export interface RoadmapProject {
   color: string;
   sections: RoadmapSection[];
 }
+
+export interface AppUser {
+  discordId: string;
+  username: string;
+  avatar: string | null;
+  role: 'owner' | 'admin' | 'member';
+  projectIds: string[];
+  createdAt: number;
+}
+
+export interface JoinRequest {
+  discordId: string;
+  username: string;
+  avatar: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: number;
+}

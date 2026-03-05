@@ -1,5 +1,5 @@
 import React from 'react';
-import { Youtube, ExternalLink, Heart, Coffee } from 'lucide-react';
+import { Youtube, Heart, Coffee } from 'lucide-react';
 
 const Footer: React.FC = () => {
   return (
@@ -52,9 +52,11 @@ const Footer: React.FC = () => {
           </div>
 
           <p className="text-gray-500 text-sm">
-            © {new Date().getFullYear()} WahajPlayz. All rights reserved. <br/> 
+            © {new Date().getFullYear()} WahajPlayz. All rights reserved. <br/>
             <span className="opacity-50 text-xs mt-2 block">Designed with React & Tailwind</span>
           </p>
+
+
         </div>
       </div>
     </footer>
