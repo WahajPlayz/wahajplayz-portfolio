@@ -6,6 +6,7 @@ import Creations from './components/Creations';
 import Roadmap from './components/Roadmap';
 import Experience from './components/Experience';
 import FAQ from './components/FAQ';
+import Community from './components/Community';
 import Footer from './components/Footer';
 import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
@@ -31,7 +32,7 @@ const AppInner: React.FC = () => {
   }, [openMemberPanel]);
 
   return (
-    <div className="bg-black min-h-screen text-white selection:bg-purple-500 selection:text-white relative">
+    <div className="min-h-screen text-white selection:bg-purple-500 selection:text-white relative" style={{ backgroundColor: '#0d0e12' }}>
       <Header />
       <main>
         <Hero />
@@ -40,6 +41,7 @@ const AppInner: React.FC = () => {
         <Roadmap />
         <Experience />
         <FAQ />
+        <Community />
       </main>
       <Footer />
       <AdminPanel />

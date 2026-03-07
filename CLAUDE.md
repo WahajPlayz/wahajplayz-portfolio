@@ -17,16 +17,37 @@ There are no tests in this project.
 
 React 19 + TypeScript + Vite portfolio site deployed to GitHub Pages at `wahajplayz.org`.
 
-**State Management:** A single `DataContext` (`context/DataContext.tsx`) wraps the entire app and manages all dynamic data (FAQ items, Roadmap projects, Members). State is persisted to `localStorage` under keys `wahaj_faq`, `wahaj_roadmap_v2`, and `wahaj_members`. The `useData()` hook provides access throughout the component tree.
+**State & Auth:** `context/DataContext.tsx` wraps the entire app and manages all data plus Discord OAuth state. The `useData()` hook exposes everything. FAQ items are stored in localStorage (`wahaj_faq`). Roadmap data and user accounts live in **Firebase Firestore** for cross-device sync.
 
-**Admin Panel:** `components/AdminPanel.tsx` is a username+password modal that allows live editing of FAQ entries, Roadmap projects/sections/steps, and team members. Credentials come from `VITE_ADMIN_USERNAME` and `VITE_ADMIN_PASSWORD` env vars. Triggered by clicking 20 times on the About section (`components/About.tsx`). Authentication state is stored in `localStorage` under `wahaj_auth`. The panel is rendered at the root level in `App.tsx` and conditionally shown via `isAdminOpen`.
+**Firebase / Firestore collections:**
+- `discord_users/{discordId}` — `AppUser` records with `role`, `projectIds`, `avatar`, `username`, `createdAt`
+- `requests/{discordId}` — `JoinRequest` records with `status: 'pending' | 'approved' | 'rejected'`
+- `wahaj_data/roadmap` — single document holding the full roadmap array
 
-**Team Portal:** `components/MemberPanel.tsx` is a member-facing modal where team members log in with their own username+password and can edit only the Roadmap projects assigned to them (add/remove sections and steps, toggle completion, reorder). Triggered by a subtle "Team Portal" button at the bottom of `components/Footer.tsx`.
+**Discord OAuth:** Implicit grant flow (no backend). `lib/discord.ts` exports `redirectToDiscordOAuth()`, `parseDiscordTokenFromHash()`, `fetchDiscordUser()`, `getDiscordAvatarUrl()`. Token stored in localStorage, expires in 7 days. On load, DataContext parses the URL hash for a token, fetches the Discord user, then checks/creates their Firestore record and watches it for role changes.
 
-**Data Types:** Defined in `types.ts`. The Roadmap has a 3-level hierarchy: `RoadmapProject` → `RoadmapSection` → `RoadmapStep`. The `Member` type holds `username`, `password`, and `projectIds` (the roadmap project IDs a member can edit).
+**Role system:** `'owner' | 'admin' | 'member' | 'pending' | null`. Owner identified by matching `VITE_OWNER_DISCORD_ID` against the Discord user's numeric `id` or `username`. `openMemberPanel()` routes owner/admin to AdminPanel, others to MemberPanel.
 
-**Path Alias:** `@` resolves to the project root (e.g., `@/types`, `@/context/DataContext`).
+**Hidden access triggers (no public buttons):**
+- 20 clicks on `#IndieDev` tag in `components/About.tsx`
+- Konami code (↑↑↓↓←→←→BA) listener in `App.tsx`
+Both call `openMemberPanel()` which routes by role.
 
-**Styling:** Tailwind CSS utility classes throughout. Dark theme (`bg-black`, `text-white`). Icons from `lucide-react` and `bootstrap-icons`.
+**Admin/Owner Panel:** `components/AdminPanel.tsx` — no login form; gated by `role === 'owner' | 'admin'`. Tabs: Roadmap (edit projects/sections/steps, inline rename, reorder), FAQ, Members (role + project assignment), Requests (pending Discord join requests with accept/reject). Owner sees Crown + "Owner Panel"; admin sees Shield + "Admin Panel". `buildAvatarUrl(discordId, avatar)` is a module-level helper (avoids naming conflict with a local `avatarUrl` variable inside the component).
 
-**No build-time data fetching** — all content is either hardcoded as initial state in `DataContext.tsx` or stored in localStorage.
+**Member Panel:** `components/MemberPanel.tsx` — Discord login portal for team members. Shows pending screen if `role === 'pending'`. Members can manage only their assigned roadmap projects (add/remove sections/steps, toggle completion, reorder). Owner/admin are redirected to AdminPanel via `useEffect` if MemberPanel opens.
+
+**Data Types:** `types.ts`. Roadmap: `RoadmapProject` → `RoadmapSection` → `RoadmapStep`. Auth: `AppUser { discordId, username, avatar, role, projectIds, createdAt }`, `JoinRequest { discordId, username, avatar, status, createdAt }`.
+
+**Env vars required** (in `.env.local`):
+```
+VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID,
+VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID
+VITE_DISCORD_CLIENT_ID, VITE_DISCORD_REDIRECT_URI, VITE_OWNER_DISCORD_ID
+```
+
+**Path Alias:** `@` resolves to the project root (e.g., `@/types`, `@/lib/discord`).
+
+**Styling:** Tailwind CSS. Dark theme (`bg-black`, `text-white`). Icons from `lucide-react` and `bootstrap-icons`.
+
+**File editing note:** The `Write` tool fails with `EEXIST` for files in OneDrive-synced directories. For complex multi-location edits, write a Node.js script to `C:/Users/wahaj/AppData/Local/Temp/` and run it with `node`.

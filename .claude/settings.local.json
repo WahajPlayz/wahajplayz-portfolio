@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm run:*)",
       "Bash(pkill:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "mcp__playwright"
     ]
   }
 }

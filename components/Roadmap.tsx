@@ -17,77 +17,86 @@ const Roadmap: React.FC = () => {
   };
 
   return (
-    <section id="roadmap" className="py-24 bg-neutral-950 border-t border-white/5 relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-96 h-96 bg-purple-900/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-      
+    <section id="roadmap" className="py-24 relative overflow-hidden scanline-overlay" style={{ background: '#10111a' }}>
+      <div className="absolute inset-0 grid-bg opacity-40 pointer-events-none" />
+      <div className="absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(0,212,255,0.05) 0%, transparent 70%)' }} />
+
       <div className="max-w-7xl mx-auto px-6 relative z-10">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-bold text-white mb-4">
-            Development <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">Roadmap</span>
+        <div className="flex items-center gap-4 mb-4">
+          <div className="h-px w-12" style={{ background: '#00d4ff' }} />
+          <span className="font-orbitron text-xs tracking-widest uppercase" style={{ color: '#00d4ff' }}>// DEV ROADMAP</span>
+          <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, #00d4ff, transparent)' }} />
+        </div>
+        <div className="mb-16">
+          <h2 className="font-orbitron font-black text-white mb-4" style={{ fontSize: 'clamp(2rem, 5vw, 3.5rem)' }}>
+            DEVELOPMENT <span className="neon-cyan">ROADMAP</span>
           </h2>
-          <p className="text-gray-400 max-w-2xl mx-auto">
-            Track the detailed progress of my projects and upcoming updates.
-          </p>
+          <p className="text-gray-500">Track the detailed progress of my projects and upcoming updates.</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {roadmapProjects.map((project) => {
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {roadmapProjects.map((project, pi) => {
             const totalSteps = project.sections.reduce((acc, s) => acc + s.steps.length, 0);
             const completedSteps = project.sections.reduce((acc, s) => acc + s.steps.filter(st => st.isCompleted).length, 0);
             const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
+            const accentColor = pi === 0 ? '#00d4ff' : '#a855f7';
+            const accentRgb = pi === 0 ? '0,212,255' : '168,85,247';
 
             return (
-              <div 
-                key={project.id} 
-                className="bg-black/50 backdrop-blur-sm rounded-3xl border border-white/10 p-8 flex flex-col h-full"
+              <div
+                key={project.id}
+                className="p-6 flex flex-col h-full transition-all duration-300"
+                style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: `1px solid rgba(${accentRgb},0.2)`,
+                  clipPath: 'polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)',
+                }}
               >
                 {/* Project Header */}
                 <div className="flex items-center gap-4 mb-6">
-                  <div className={`p-3 rounded-xl bg-gradient-to-br ${project.color} bg-opacity-20 border border-white/10`}>
+                  <div className="p-3 flex-shrink-0" style={{ background: `rgba(${accentRgb},0.1)`, border: `1px solid rgba(${accentRgb},0.3)` }}>
                     {getIcon(project.iconType, "text-white")}
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-2xl font-bold text-white">{project.title}</h3>
-                    <div className="w-full h-1.5 bg-white/5 rounded-full mt-2 overflow-hidden">
-                      <div 
-                        className={`h-full bg-gradient-to-r ${project.color} transition-all duration-1000`} 
-                        style={{ width: `${progress}%` }}
-                      ></div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-orbitron font-bold text-white text-lg truncate">{project.title}</h3>
+                    <div className="w-full h-1 mt-2 overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                      <div
+                        className="h-full transition-all duration-1000"
+                        style={{ width: `${progress}%`, background: `linear-gradient(to right, ${accentColor}, ${pi === 0 ? '#a855f7' : '#ec4899'})`, boxShadow: `0 0 8px ${accentColor}` }}
+                      />
                     </div>
                   </div>
-                  <span className="text-xs font-mono text-gray-400">{Math.round(progress)}%</span>
+                  <span className="font-orbitron text-xs flex-shrink-0" style={{ color: accentColor }}>{Math.round(progress)}%</span>
                 </div>
-                {/* Sections and Steps */}
-                <div className="space-y-8 flex-1">
+
+                {/* Sections */}
+                <div className="space-y-6 flex-1">
                   {project.sections.map((section) => (
                     <div key={section.id}>
-                      <h4 className="text-xs font-black uppercase tracking-widest text-gray-500 mb-4 flex items-center gap-2">
-                        <span className="h-px w-4 bg-gray-700"></span>
+                      <h4 className="font-orbitron text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2" style={{ color: accentColor }}>
+                        <span className="h-px w-4 inline-block" style={{ background: accentColor }} />
                         {section.title}
                       </h4>
-                      <div className="space-y-3 pl-4">
+                      <div className="space-y-2 pl-4">
                         {section.steps.map((step) => (
                           <div key={step.id} className="flex items-center gap-3">
                             {step.isCompleted ? (
-                              <CheckCircle2 size={16} className="text-purple-500 flex-shrink-0" />
+                              <CheckCircle2 size={14} className="flex-shrink-0" style={{ color: accentColor }} />
                             ) : (
-                              <Circle size={16} className="text-gray-700 flex-shrink-0" />
+                              <Circle size={14} className="text-gray-700 flex-shrink-0" />
                             )}
-                            <span className={`text-sm ${step.isCompleted ? 'text-gray-300' : 'text-gray-600'}`}>
-                              {step.text}
-                            </span>
+                            <span className={`text-sm ${step.isCompleted ? 'text-gray-300' : 'text-gray-600'}`}>{step.text}</span>
                           </div>
                         ))}
                         {section.steps.length === 0 && (
-                          <p className="text-xs text-gray-700 italic">No steps planned for this phase yet.</p>
+                          <p className="text-xs text-gray-700 italic font-mono">// No steps planned yet</p>
                         )}
                       </div>
                     </div>
                   ))}
                   {project.sections.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-12 text-gray-600">
-                      <p>Planning in progress...</p>
-                    </div>
+                    <p className="text-gray-700 text-sm font-mono italic">// Planning in progress...</p>
                   )}
                 </div>
               </div>
