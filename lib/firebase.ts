@@ -1,5 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache } from 'firebase/firestore';
+import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -10,5 +12,21 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const app = initializeApp(firebaseConfig);
+// Offline persistence: writes commit locally first (<100ms), sync in background
+export const db = initializeFirestore(app, { localCache: persistentLocalCache() });
+export const auth = getAuth(app);
+export const storage = getStorage(app);
+let storageAuthPromise: Promise<import('firebase/auth').User> | null = null;
+
+export const ensureStorageAuth = async () => {
+  if (auth.currentUser) return auth.currentUser;
+  if (!storageAuthPromise) {
+    storageAuthPromise = signInAnonymously(auth)
+      .then((credential) => credential.user)
+      .finally(() => {
+        storageAuthPromise = null;
+      });
+  }
+  return storageAuthPromise;
+};

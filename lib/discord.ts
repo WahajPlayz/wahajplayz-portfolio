@@ -26,13 +26,22 @@ export const redirectToDiscordOAuth = (): void => {
   window.location.href = `https://discord.com/api/oauth2/authorize?${params}`;
 };
 
+const DISCORD_OAUTH_STORAGE_KEY = 'discord_oauth_hash';
+
 export const parseDiscordTokenFromHash = (): { token: string; expiresAt: number } | null => {
-  if (!window.location.hash) return null;
-  const params = new URLSearchParams(window.location.hash.slice(1));
+  const rawHash = sessionStorage.getItem(DISCORD_OAUTH_STORAGE_KEY) || window.location.hash;
+  if (!rawHash) return null;
+  const params = new URLSearchParams(rawHash.replace(/^#/, ''));
   const token = params.get('access_token');
   const expiresIn = parseInt(params.get('expires_in') || '604800');
   if (!token) return null;
+  sessionStorage.removeItem(DISCORD_OAUTH_STORAGE_KEY);
   return { token, expiresAt: Date.now() + expiresIn * 1000 };
+};
+
+export const stashDiscordOAuthHash = (): void => {
+  if (!window.location.hash.includes('access_token=')) return;
+  sessionStorage.setItem(DISCORD_OAUTH_STORAGE_KEY, window.location.hash);
 };
 
 export const fetchDiscordUser = async (token: string): Promise<DiscordUser> => {

@@ -75,12 +75,6 @@ const Hero: React.FC = () => {
           <SocialLink href="https://discord.com/invite/JMgSaKj6st" hoverColor="hover:bg-indigo-500/20 hover:border-indigo-500/50">
             <DiscordIcon />
           </SocialLink>
-          <SocialLink href="https://www.patreon.com/cw/WahajPlayz" hoverColor="hover:bg-blue-500/20 hover:border-blue-500/50">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M22.957 7.21c-.004-3.064-2.391-5.576-5.191-6.482-3.478-1.125-8.064-.962-11.384.604C2.357 3.231 1.093 7.391 1.046 11.54c-.039 3.411.302 12.396 5.369 12.46 3.765.047 4.326-4.804 6.068-7.141 1.24-1.662 2.836-2.132 4.801-2.618 3.376-.836 5.678-3.501 5.673-7.031Z" /></svg>
-          </SocialLink>
-          <SocialLink href="https://ko-fi.com/wahajplayz" hoverColor="hover:bg-purple-500/20 hover:border-purple-500/50">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.019c-.rv.025-.24-.126-.24-.126s-2.31-1.594-3.989-3.238c-1.21-1.202-1.756-2.351-1.832-3.493-.784-5.297 5.979-5.987 5.979-5.987s6.581-.006 6.398 5.789c-.028 1.155-.541 2.206-2.00 3.06z"/></svg>
-          </SocialLink>
         </div>
 
         {/* CTA Buttons */}
@@ -101,19 +95,6 @@ const Hero: React.FC = () => {
           </button>
         </div>
 
-        {/* Patreon CTA */}
-        <div className="flex justify-center">
-          <a
-            href="https://www.patreon.com/c/wahajplayz/membership"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 px-6 py-3 font-bold transition-all duration-300 hover:scale-105"
-            style={{ background: 'rgba(0,89,255,0.15)', border: '1px solid rgba(0,89,255,0.4)', color: '#4da6ff', clipPath: 'polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%)' }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M22.957 7.21c-.004-3.064-2.391-5.576-5.191-6.482-3.478-1.125-8.064-.962-11.384.604C2.357 3.231 1.093 7.391 1.046 11.54c-.039 3.411.302 12.396 5.369 12.46 3.765.047 4.326-4.804 6.068-7.141 1.24-1.662 2.836-2.132 4.801-2.618 3.376-.836 5.678-3.501 5.673-7.031Z" /></svg>
-            Become a Patreon Member
-          </a>
-        </div>
       </div>
 
       {/* Scroll indicator */}

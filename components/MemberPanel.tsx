@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { X, Check, Plus, Trash2, ChevronUp, ChevronDown, LogOut, Clock, Users } from 'lucide-react';
-import { getDiscordAvatarUrl } from '../lib/discord';
+import { getDiscordAvatarUrl, OWNER_DISCORD_ID } from '../lib/discord';
+const OWNER_SESSION_KEY = 'wahaj_owner_verified';
 
 const moveInArray = (ids: string[], id: string, direction: 'up' | 'down') => {
   const idx = ids.indexOf(id);
@@ -19,12 +20,13 @@ const MemberPanel: React.FC = () => {
     closeMemberPanel,
     openAdmin,
     discordUser,
+    currentAppUser,
     role,
     authLoading,
+    portalSyncError,
     discordLogin,
     discordLogout,
     roadmapProjects,
-    appUsers,
     addSection,
     removeSection,
     addStep,
@@ -36,19 +38,22 @@ const MemberPanel: React.FC = () => {
 
   const [newSectionInputs, setNewSectionInputs] = useState<{ [key: string]: string }>({});
   const [newStepInputs, setNewStepInputs] = useState<{ [key: string]: string }>({});
+  const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID || localStorage.getItem(OWNER_SESSION_KEY) === '1';
 
   // When role becomes admin/owner while panel is open, switch to admin panel
   useEffect(() => {
-    if ((role === 'owner' || role === 'admin') && isMemberPanelOpen) {
+    if ((role === 'owner' || role === 'admin' || isOwnerAccount) && isMemberPanelOpen) {
       closeMemberPanel();
       openAdmin();
     }
-  }, [role, isMemberPanelOpen]);
+  }, [role, isMemberPanelOpen, isOwnerAccount, closeMemberPanel, openAdmin]);
 
   if (!isMemberPanelOpen) return null;
 
-  const currentAppUser = appUsers.find(u => u.discordId === discordUser?.id);
-  const accessibleProjects = roadmapProjects.filter(p => currentAppUser?.projectIds.includes(p.id) ?? false);
+  const assignedProjectIds = currentAppUser?.projectIds || [];
+  const accessibleProjects = assignedProjectIds.length > 0
+    ? roadmapProjects.filter(p => assignedProjectIds.includes(p.id))
+    : roadmapProjects;
 
   const handleAddSection = (projectId: string) => {
     const title = newSectionInputs[projectId];
@@ -99,7 +104,7 @@ const MemberPanel: React.FC = () => {
         <div className="flex-1 overflow-auto p-6">
 
           {/* Loading */}
-          {authLoading && (
+          {(authLoading || (discordUser && role === null && !portalSyncError)) && (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
               <div className="w-10 h-10 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
               <p className="text-gray-400 text-sm">Verifying your Discord account...</p>
@@ -137,17 +142,31 @@ const MemberPanel: React.FC = () => {
               <div>
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <Clock size={20} className="text-yellow-400" />
-                  <h3 className="text-xl font-bold text-white">Request Pending</h3>
+                  <h3 className="text-xl font-bold text-white">Access Request Sent</h3>
                 </div>
                 <p className="text-gray-400 text-sm max-w-sm">
-                  Hi <strong className="text-white">{displayName}</strong>! Your join request has been submitted and is waiting for approval from the owner or an admin.
+                  Hey <strong className="text-white">{displayName}</strong>! Your access request has been sent to the owner. You'll get access once they approve you — sign back in after that.
                 </p>
-                <p className="text-gray-600 text-xs mt-3">You'll be notified when your request is reviewed. Try signing in again after approval.</p>
-                <div className="mt-4 p-3 rounded-lg bg-white/5 border border-white/10 text-left">
-                  <p className="text-xs text-gray-500 mb-1 uppercase tracking-wider">Your Discord Info</p>
-                  <p className="text-xs text-gray-400">Username: <span className="text-white font-mono">{discordUser.username}</span></p>
-                  <p className="text-xs text-gray-400">Numeric ID: <span className="text-white font-mono select-all">{discordUser.id}</span></p>
+                <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-left">
+                  <p className="text-xs text-yellow-400 mb-1 uppercase tracking-wider font-bold">Waiting for approval</p>
+                  <p className="text-xs text-gray-400">The owner can see your request in the Admin Panel under <span className="text-white">Requests</span>.</p>
+                  <p className="text-xs text-gray-500 mt-2">Your Discord ID: <span className="text-white font-mono select-all">{discordUser.id}</span></p>
                 </div>
+              </div>
+              <button onClick={discordLogout} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-white bg-white/5 rounded-lg transition-colors">
+                <LogOut size={14} /> Sign out
+              </button>
+            </div>
+          )}
+
+          {!authLoading && discordUser && role === null && portalSyncError && (
+            <div className="flex flex-col items-center justify-center py-16 gap-5 text-center">
+              <div className="w-12 h-12 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+              <div>
+                <h3 className="text-xl font-bold text-white">Syncing Team Access</h3>
+                <p className="text-gray-400 text-sm max-w-sm mt-2">
+                  {portalSyncError || 'We can see your Discord sign-in, but your Team Portal access is still syncing. If this stays here, sign out and sign back in once.'}
+                </p>
               </div>
               <button onClick={discordLogout} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400 hover:text-white bg-white/5 rounded-lg transition-colors">
                 <LogOut size={14} /> Sign out
@@ -161,8 +180,8 @@ const MemberPanel: React.FC = () => {
               {accessibleProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-500">
                   <Users size={48} className="mb-4 opacity-30" />
-                  <p>You haven't been assigned to any projects yet.</p>
-                  <p className="text-sm mt-1 opacity-60">Ask the owner to assign you to a project.</p>
+                  <p>No roadmap projects are available yet.</p>
+                  <p className="text-sm mt-1 opacity-60">Once projects are added, they will show up here automatically.</p>
                 </div>
               ) : (
                 accessibleProjects.map(project => (

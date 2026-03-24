@@ -1,16 +1,65 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
+import { OWNER_DISCORD_ID } from '../lib/discord';
+
+const SETUP_IMAGE_URL = 'https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg';
+const SETUP_FALLBACK_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#04121d"/>
+        <stop offset="55%" stop-color="#0c2340"/>
+        <stop offset="100%" stop-color="#241136"/>
+      </linearGradient>
+      <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.65"/>
+        <stop offset="100%" stop-color="#a855f7" stop-opacity="0.65"/>
+      </linearGradient>
+    </defs>
+    <rect width="800" height="800" fill="url(#bg)"/>
+    <rect x="30" y="30" width="740" height="740" fill="none" stroke="url(#glow)" stroke-width="4"/>
+    <rect x="60" y="80" width="680" height="360" rx="22" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)"/>
+    <circle cx="210" cy="260" r="95" fill="rgba(0,212,255,0.12)" stroke="rgba(0,212,255,0.35)" stroke-width="4"/>
+    <rect x="340" y="180" width="210" height="24" rx="12" fill="rgba(255,255,255,0.7)"/>
+    <rect x="340" y="225" width="160" height="18" rx="9" fill="rgba(255,255,255,0.32)"/>
+    <rect x="140" y="540" width="230" height="20" rx="10" fill="#ffffff"/>
+    <rect x="140" y="575" width="280" height="14" rx="7" fill="rgba(255,255,255,0.38)"/>
+    <text x="140" y="675" fill="#00d4ff" font-family="Orbitron, Arial, sans-serif" font-size="42" font-weight="700" letter-spacing="5">WAHAJPLAYZ</text>
+  </svg>`
+)}`;
 
 const About: React.FC = () => {
-  const { openMemberPanel } = useData();
+  const { openMemberPanel, openAdmin, role, discordUser, authLoading } = useData();
   const [clickCount, setClickCount] = useState(0);
+  const [ownerClickCount, setOwnerClickCount] = useState(0);
+  const [setupImageSrc, setSetupImageSrc] = useState(SETUP_IMAGE_URL);
+  const ownerSessionVerified = localStorage.getItem('wahaj_owner_verified') === '1';
+  const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID;
+
+  const openCorrectPanel = () => {
+    const hasDiscordSession = !!localStorage.getItem('discord_token');
+    if (role === 'owner' || role === 'admin' || isOwnerAccount || ownerSessionVerified || (authLoading && hasDiscordSession)) {
+      openAdmin();
+      return;
+    }
+    openMemberPanel();
+  };
 
   const handleSecretClick = () => {
     const newCount = clickCount + 1;
     setClickCount(newCount);
     if (newCount === 20) {
-      openMemberPanel();
+      openCorrectPanel();
       setClickCount(0);
+    }
+  };
+
+  const handleOwnerClick = () => {
+    const newCount = ownerClickCount + 1;
+    setOwnerClickCount(newCount);
+    if (newCount === 20) {
+      openAdmin();
+      setOwnerClickCount(0);
     }
   };
 
@@ -63,8 +112,11 @@ const About: React.FC = () => {
             </div>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <div className="px-4 py-2 border text-sm font-mono tracking-wide"
-                style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#a855f7', background: 'rgba(168,85,247,0.05)' }}>
+              <div
+                className="px-4 py-2 border text-sm font-mono tracking-wide cursor-default select-none active:scale-95 transition-transform"
+                style={{ borderColor: 'rgba(168,85,247,0.4)', color: '#a855f7', background: 'rgba(168,85,247,0.05)' }}
+                onClick={handleOwnerClick}
+              >
                 #Unity3D
               </div>
               <div
@@ -90,8 +142,9 @@ const About: React.FC = () => {
               <div className="absolute inset-0.5 overflow-hidden"
                 style={{ clipPath: 'polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%)' }}>
                 <img
-                  src="https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg"
+                  src={setupImageSrc}
                   alt="WahajPlayz Setup"
+                  onError={() => setSetupImageSrc(SETUP_FALLBACK_IMAGE)}
                   className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500 group-hover:scale-105 scale-100"
                 />
                 <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 60%)' }} />

@@ -1,0 +1,97 @@
+import React, { useState } from 'react';
+import { X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { redirectToDiscordOAuth } from '@/lib/discord';
+import { auth } from '@/lib/firebase';
+
+const AuthModal: React.FC = () => {
+  const { isAuthModalOpen, closeAuthModal, pendingCallback,
+    signInWithGoogle } = useAuth();
+
+  const [step, setStep] = useState<'auth' | 'discord'>('auth');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  if (!isAuthModalOpen) return null;
+
+  const waitForGoogleSession = async (timeoutMs = 5000) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const user = auth.currentUser;
+      if (user && !user.isAnonymous) {
+        await user.getIdToken(true);
+        return true;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+    }
+    return false;
+  };
+
+  const handleSocial = async (fn: () => Promise<void>) => {
+    setLoading(true); setError('');
+    try {
+      await fn();
+      setStep('discord');
+    } catch (e: any) {
+      setError(e.message || 'Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDiscordLink = () => {
+    redirectToDiscordOAuth();
+    closeAuthModal();
+  };
+
+  const handleSkipDiscord = async () => {
+    localStorage.setItem('wahaj_skip_discord', '1');
+    await waitForGoogleSession();
+    closeAuthModal();
+    if (pendingCallback) pendingCallback();
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.85)' }}>
+      <div className="w-full max-w-md p-8 relative" style={{ background: '#0d0e12', border: '1px solid rgba(0,212,255,0.3)', clipPath: 'polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)' }}>
+        <button onClick={closeAuthModal} className="absolute top-4 right-4 text-gray-600 hover:text-white transition-colors"><X size={20} /></button>
+
+        {step === 'auth' ? (
+          <>
+            <h2 className="font-orbitron font-bold text-xl mb-2" style={{ color: '#00d4ff' }}>
+              SIGN IN
+            </h2>
+            <p className="text-gray-500 text-xs font-mono mb-8">Use Google, then optionally link Discord for community and member perks.</p>
+
+            <div className="space-y-3 mb-6">
+              <button onClick={() => handleSocial(signInWithGoogle)} disabled={loading}
+                className="w-full flex items-center gap-3 px-4 py-3 font-orbitron text-xs tracking-widest uppercase transition-all hover:scale-[1.02] disabled:opacity-40"
+                style={{ background: 'rgba(66,133,244,0.1)', border: '1px solid rgba(66,133,244,0.4)', color: '#4285f4' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                Continue with Google
+              </button>
+            </div>
+
+            {error && <p className="text-red-400 text-xs font-mono mb-3">{error}</p>}
+          </>
+        ) : (
+          <>
+            <h2 className="font-orbitron font-bold text-xl mb-2" style={{ color: '#5865f2' }}>LINK DISCORD</h2>
+            <p className="text-gray-400 text-sm mb-8">Link your Discord account to access team features, join requests, and community perks.</p>
+            <button onClick={handleDiscordLink}
+              className="w-full flex items-center justify-center gap-2 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-[1.02] mb-3"
+              style={{ background: 'rgba(88,101,242,0.2)', border: '1px solid rgba(88,101,242,0.6)', color: '#5865f2', clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)' }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M13.545 2.907a13.2 13.2 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.2 12.2 0 0 0-3.658 0 8 8 0 0 0-.412-.833.05.05 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.04.04 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032q.003.022.021.037a13.3 13.3 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019q.463-.63.818-1.329a.05.05 0 0 0-.01-.059l-.018-.011a9 9 0 0 1-1.248-.595.05.05 0 0 1-.02-.066l.015-.019q.127-.095.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.05.05 0 0 1 .053.007q.121.1.248.195a.05.05 0 0 1-.004.085 8 8 0 0 1-1.249.594.05.05 0 0 0-.03.03.05.05 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.2 13.2 0 0 0 4.001-2.02.05.05 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.03.03 0 0 0-.02-.019m-8.198 7.307c-.789 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612m5.316 0c-.788 0-1.438-.724-1.438-1.612s.637-1.613 1.438-1.613c.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612"/></svg>
+              Link Discord Account
+            </button>
+            <button onClick={() => { void handleSkipDiscord(); }} className="w-full text-gray-600 text-xs font-mono py-2 hover:text-gray-400 transition-colors">
+              Skip for now
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default AuthModal;

@@ -1,5 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+
+const HEADER_LOGO_URL = 'https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg';
+const HEADER_LOGO_FALLBACK = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+    <defs>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#06101a"/>
+        <stop offset="100%" stop-color="#221130"/>
+      </linearGradient>
+      <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#00d4ff"/>
+        <stop offset="100%" stop-color="#a855f7"/>
+      </linearGradient>
+    </defs>
+    <rect width="160" height="160" rx="80" fill="url(#bg)"/>
+    <circle cx="80" cy="80" r="74" fill="none" stroke="url(#ring)" stroke-width="4"/>
+    <text x="80" y="92" text-anchor="middle" fill="#ffffff" font-family="Orbitron, Arial, sans-serif" font-size="48" font-weight="700">W</text>
+  </svg>`
+)}`;
 
 const navLinks = [
   { name: 'Home', href: '#home' },
@@ -12,8 +32,10 @@ const navLinks = [
 ];
 
 const Header: React.FC = () => {
+  const { user, openAuthModal } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [logoSrc, setLogoSrc] = useState(HEADER_LOGO_URL);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -66,8 +88,9 @@ const Header: React.FC = () => {
           className="flex items-center gap-3 hover:opacity-80 transition-opacity"
         >
           <img
-            src="https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg"
+            src={logoSrc}
             alt="WahajPlayz"
+            onError={() => setLogoSrc(HEADER_LOGO_FALLBACK)}
             className="h-10 w-10 object-contain rounded-full"
             style={{ boxShadow: '0 0 12px rgba(0,212,255,0.4)' }}
           />
@@ -89,8 +112,32 @@ const Header: React.FC = () => {
           ))}
         </nav>
 
-        {/* CTA Button */}
-        <div className="hidden md:block">
+        {/* Account / CTA */}
+        <div className="hidden md:flex items-center gap-3">
+          {user ? (
+            <a
+              href="#/profile"
+              className="px-4 py-2 font-orbitron font-bold text-xs tracking-widest uppercase transition-all duration-300 hover:scale-105 flex items-center gap-2"
+              style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}
+            >
+              {user.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName || 'Profile'} className="w-5 h-5 rounded-full" />
+              ) : (
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-cyan-500/20 text-[10px]">
+                  {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                </span>
+              )}
+              Profile
+            </a>
+          ) : (
+            <button
+              onClick={() => openAuthModal()}
+              className="px-4 py-2 font-orbitron font-bold text-xs tracking-widest uppercase transition-all duration-300 hover:scale-105"
+              style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}
+            >
+              Sign In
+            </button>
+          )}
           <a
             href="https://discord.gg/KF9cMSZ2hW"
             target="_blank"
@@ -130,6 +177,31 @@ const Header: React.FC = () => {
               {link.name}
             </a>
           ))}
+          {user ? (
+            <a
+              href="#/profile"
+              className="font-orbitron text-xs tracking-widest uppercase text-cyan-300 hover:text-white py-3 border-b transition-colors flex items-center gap-2"
+              style={{ borderColor: 'rgba(0,212,255,0.1)' }}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              {user.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName || 'Profile'} className="w-5 h-5 rounded-full" />
+              ) : (
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-cyan-500/20 text-[10px]">
+                  {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                </span>
+              )}
+              Profile
+            </a>
+          ) : (
+            <button
+              className="text-left font-orbitron text-xs tracking-widest uppercase text-cyan-300 hover:text-white py-3 border-b transition-colors"
+              style={{ borderColor: 'rgba(0,212,255,0.1)' }}
+              onClick={() => { setMobileMenuOpen(false); openAuthModal(); }}
+            >
+              Sign In
+            </button>
+          )}
           <a
             href="https://discord.gg/KF9cMSZ2hW"
             target="_blank"

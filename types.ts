@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import type { AdminPermissions } from './config/ownerConfig';
 
 export interface Project {
   id: string;
@@ -52,8 +53,9 @@ export interface AppUser {
   discordId: string;
   username: string;
   avatar: string | null;
-  role: 'owner' | 'admin' | 'member';
+  role: 'owner' | 'admin' | 'member' | 'pending';
   projectIds: string[];
+  adminPermissions?: AdminPermissions;
   createdAt: number;
 }
 

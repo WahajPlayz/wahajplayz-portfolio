@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { doc, collection, onSnapshot, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth, db, ensureStorageAuth } from '../lib/firebase';
 import { FAQItem, RoadmapProject, AppUser, JoinRequest } from '../types';
+import { AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
 import {
   DiscordUser,
   OWNER_DISCORD_ID,
@@ -15,8 +17,10 @@ type Role = 'owner' | 'admin' | 'member' | 'pending' | null;
 interface DataContextType {
   // Auth
   discordUser: DiscordUser | null;
+  currentAppUser: AppUser | null;
   role: Role;
   authLoading: boolean;
+  portalSyncError: string;
   discordLogin: () => void;
   discordLogout: () => void;
   // Panel state
@@ -46,14 +50,16 @@ interface DataContextType {
   // Users & Requests
   appUsers: AppUser[];
   requests: JoinRequest[];
-  approveRequest: (discordId: string, assignRole: 'admin' | 'member', projectIds: string[]) => Promise<void>;
+  approveRequest: (discordId: string, assignRole: 'admin' | 'member', projectIds: string[], adminPermissions?: AdminPermissions) => Promise<void>;
   rejectRequest: (discordId: string) => Promise<void>;
   updateUserRole: (discordId: string, newRole: 'admin' | 'member') => Promise<void>;
+  updateAdminPermissions: (discordId: string, permissions: AdminPermissions) => Promise<void>;
   updateUserProjects: (discordId: string, projectIds: string[]) => Promise<void>;
   removeUser: (discordId: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
+const OWNER_SESSION_KEY = 'wahaj_owner_verified';
 
 const INITIAL_FAQ: FAQItem[] = [
   {
@@ -130,12 +136,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
   const [discordUser, setDiscordUser] = useState<DiscordUser | null>(null);
+  const [currentAppUser, setCurrentAppUser] = useState<AppUser | null>(null);
   const [role, setRole] = useState<Role>(null);
   const [authLoading, setAuthLoading] = useState(() => !!localStorage.getItem('discord_token'));
+  const [portalSyncError, setPortalSyncError] = useState('');
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(auth.currentUser);
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
 
   // Users & Requests from Firestore
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [requests, setRequests] = useState<JoinRequest[]>([]);
+  const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID;
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      setFirebaseAuthReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!discordToken || !firebaseAuthReady || firebaseUser) return;
+    ensureStorageAuth().catch((error) => {
+      console.error('Failed to establish Firebase auth for Discord portal:', error);
+    });
+  }, [discordToken, firebaseAuthReady, firebaseUser]);
 
   // Step 1: Parse Discord token from URL hash on initial load
   useEffect(() => {
@@ -156,101 +181,185 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!discordToken) {
       setAuthLoading(false);
       setDiscordUser(null);
+      setCurrentAppUser(null);
       setRole(null);
+      setPortalSyncError('');
+      localStorage.removeItem(OWNER_SESSION_KEY);
+      return;
+    }
+
+    if (!firebaseAuthReady) {
+      setAuthLoading(true);
       return;
     }
 
     setAuthLoading(true);
+    setPortalSyncError('');
 
     fetchDiscordUser(discordToken).then(async (user) => {
       setDiscordUser(user);
 
-      const isOwnerAccount = user.id === OWNER_DISCORD_ID || user.username === OWNER_DISCORD_ID;
-      if (isOwnerAccount) {
-        // Owner: ensure Firestore doc exists with owner role
-        await setDoc(doc(db, 'discord_users', user.id), {
+      const isOwnerLogin = user.id === OWNER_DISCORD_ID || user.username === OWNER_DISCORD_ID;
+      if (isOwnerLogin) {
+        localStorage.setItem(OWNER_SESSION_KEY, '1');
+        setRole('owner');
+        setCurrentAppUser({
           discordId: user.id,
           username: user.global_name || user.username,
           avatar: user.avatar,
           role: 'owner',
           projectIds: [],
           createdAt: Date.now(),
-        }, { merge: true });
-        setRole('owner');
-      } else {
-        // Check Firestore for existing approved user
+        });
+        try {
+          if (!firebaseUser) await ensureStorageAuth();
+          await setDoc(doc(db, 'discord_users', user.id), {
+            discordId: user.id,
+            username: user.global_name || user.username,
+            avatar: user.avatar,
+            role: 'owner',
+            projectIds: [],
+            createdAt: Date.now(),
+          }, { merge: true });
+        } catch (error) {
+          console.error('Failed to sync owner user record:', error);
+        }
+        setAuthLoading(false);
+        return;
+      }
+
+      const syncUser = async () => {
+        // Always ensure Firebase anonymous auth before Firestore operations
+        await ensureStorageAuth();
         const userSnap = await getDoc(doc(db, 'discord_users', user.id));
         if (userSnap.exists()) {
-          setRole((userSnap.data() as AppUser).role);
+          const appUser = userSnap.data() as AppUser;
+          setCurrentAppUser(appUser);
+          setRole(appUser.role);
+          setPortalSyncError('');
         } else {
-          // New user: create a pending request (if not already pending/rejected)
-          const reqSnap = await getDoc(doc(db, 'requests', user.id));
-          if (!reqSnap.exists()) {
-            await setDoc(doc(db, 'requests', user.id), {
-              discordId: user.id,
-              username: user.global_name || user.username,
-              avatar: user.avatar,
-              status: 'pending',
-              createdAt: Date.now(),
-            });
-          }
-          setRole(reqSnap.exists() && reqSnap.data().status === 'approved' ? (userSnap.data() as AppUser)?.role ?? 'pending' : 'pending');
+          // New user — create a pending access request
+          const pendingUser: AppUser = {
+            discordId: user.id,
+            username: user.global_name || user.username,
+            avatar: user.avatar,
+            role: 'pending',
+            projectIds: [],
+            createdAt: Date.now(),
+          };
+          await setDoc(doc(db, 'discord_users', user.id), pendingUser, { merge: true });
+          setCurrentAppUser(pendingUser);
+          setRole('pending');
+          setPortalSyncError('');
+        }
+      };
+
+      try {
+        await syncUser();
+      } catch {
+        // Retry once with a fresh auth token
+        try {
+          await syncUser();
+        } catch (error) {
+          console.error('Failed to sync Discord user role:', error);
+          setCurrentAppUser(null);
+          setRole(null);
+          setPortalSyncError('Could not connect. Check your internet and try signing out and back in.');
         }
       }
+
       setAuthLoading(false);
     }).catch(() => {
       localStorage.removeItem('discord_token');
       localStorage.removeItem('discord_token_expires');
+      localStorage.removeItem(OWNER_SESSION_KEY);
       setDiscordToken(null);
       setDiscordUser(null);
+      setCurrentAppUser(null);
       setRole(null);
+      setPortalSyncError('Discord sign-in could not be verified. Please try again.');
       setAuthLoading(false);
     });
-  }, [discordToken]);
+  }, [discordToken, firebaseAuthReady, firebaseUser]);
 
   // Step 3: Watch for role changes from Firestore (e.g., when owner approves request)
   useEffect(() => {
     if (!discordUser || role === 'owner') return;
     const unsubscribe = onSnapshot(doc(db, 'discord_users', discordUser.id), (snap) => {
       if (snap.exists()) {
-        setRole((snap.data() as AppUser).role);
+        const appUser = snap.data() as AppUser;
+        setCurrentAppUser(appUser);
+        setRole(appUser.role);
+        setPortalSyncError('');
+      } else {
+        setCurrentAppUser(null);
+        setRole('pending');
+        setPortalSyncError('');
       }
     });
     return unsubscribe;
   }, [discordUser?.id, role]);
 
+  useEffect(() => {
+    if ((role === 'owner' || role === 'admin' || isOwnerAccount) && isMemberPanelOpen) {
+      setIsMemberPanelOpen(false);
+      setIsAdminOpen(true);
+    }
+  }, [role, isMemberPanelOpen, isOwnerAccount]);
+
   // Firestore real-time listeners
   useEffect(() => {
+    if (!firebaseUser || (role !== 'owner' && role !== 'admin')) {
+      setAppUsers([]);
+      return;
+    }
     const unsubscribe = onSnapshot(
       collection(db, 'discord_users'),
       (snap) => setAppUsers(snap.docs.map(d => d.data() as AppUser)),
       (error) => console.error('Firestore users error:', error)
     );
     return unsubscribe;
-  }, []);
+  }, [firebaseUser, role]);
 
   useEffect(() => {
+    if (!firebaseUser || (role !== 'owner' && role !== 'admin')) {
+      setRequests([]);
+      return;
+    }
     const unsubscribe = onSnapshot(
-      collection(db, 'requests'),
-      (snap) => setRequests(snap.docs.map(d => d.data() as JoinRequest).filter(r => r.status === 'pending')),
+      collection(db, 'discord_users'),
+      (snap) => setRequests(
+        snap.docs
+          .map(d => d.data() as AppUser)
+          .filter(user => user.role === 'pending')
+          .map(user => ({
+            discordId: user.discordId,
+            username: user.username,
+            avatar: user.avatar,
+            status: 'pending',
+            createdAt: user.createdAt,
+          }))
+      ),
       (error) => console.error('Firestore requests error:', error)
     );
     return unsubscribe;
-  }, []);
+  }, [firebaseUser, role]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      doc(db, 'wahaj_data', 'roadmap'),
-      (snap) => {
+    let cancelled = false;
+
+    getDoc(doc(db, 'wahaj_data', 'roadmap'))
+      .then((snap) => {
+        if (cancelled) return;
         if (snap.exists()) {
           setRoadmapProjects(snap.data().projects ?? INITIAL_ROADMAP);
-        } else {
-          setDoc(doc(db, 'wahaj_data', 'roadmap'), { projects: INITIAL_ROADMAP });
         }
-      },
-      (error) => console.error('Firestore roadmap error:', error)
-    );
-    return unsubscribe;
+      })
+      .catch((error) => console.error('Firestore roadmap load error:', error));
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -263,21 +372,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const discordLogout = () => {
     localStorage.removeItem('discord_token');
     localStorage.removeItem('discord_token_expires');
+    localStorage.removeItem(OWNER_SESSION_KEY);
     setDiscordToken(null);
     setDiscordUser(null);
+    setCurrentAppUser(null);
     setRole(null);
+    setPortalSyncError('');
     setIsAdminOpen(false);
     setIsMemberPanelOpen(false);
   };
 
   // Panel functions
+  const openAdmin = () => {
+    setIsMemberPanelOpen(false);
+    setIsAdminOpen(true);
+  };
+
+  const closeAdmin = () => setIsAdminOpen(false);
+
   const openMemberPanel = () => {
-    if (role === 'owner' || role === 'admin') {
-      setIsAdminOpen(true);
+    if (role === 'owner' || role === 'admin' || isOwnerAccount || localStorage.getItem(OWNER_SESSION_KEY) === '1') {
+      openAdmin();
     } else {
+      setIsAdminOpen(false);
       setIsMemberPanelOpen(true);
     }
   };
+
+  const closeMemberPanel = () => setIsMemberPanelOpen(false);
 
   // Roadmap helpers
   const saveRoadmap = (updated: RoadmapProject[]) => {
@@ -364,30 +486,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // User & Request management
-  const approveRequest = async (discordId: string, assignRole: 'admin' | 'member', projectIds: string[]) => {
-    const req = requests.find(r => r.discordId === discordId);
-    if (!req) return;
+  const approveRequest = async (discordId: string, assignRole: 'admin' | 'member', projectIds: string[], adminPermissions?: AdminPermissions) => {
+    const pendingUser = appUsers.find(u => u.discordId === discordId && u.role === 'pending');
+    if (!pendingUser) return;
     await setDoc(doc(db, 'discord_users', discordId), {
       discordId,
-      username: req.username,
-      avatar: req.avatar,
+      username: pendingUser.username,
+      avatar: pendingUser.avatar,
       role: assignRole,
       projectIds,
-      createdAt: Date.now(),
-    });
-    await setDoc(doc(db, 'requests', discordId), { ...req, status: 'approved' });
+      ...(assignRole === 'admin' ? { adminPermissions: adminPermissions ?? { ...defaultAdminPermissions } } : {}),
+      createdAt: pendingUser.createdAt || Date.now(),
+    }, { merge: true });
   };
 
   const rejectRequest = async (discordId: string) => {
-    const req = requests.find(r => r.discordId === discordId);
-    if (!req) return;
-    await setDoc(doc(db, 'requests', discordId), { ...req, status: 'rejected' });
+    await deleteDoc(doc(db, 'discord_users', discordId));
   };
 
   const updateUserRole = async (discordId: string, newRole: 'admin' | 'member') => {
     const user = appUsers.find(u => u.discordId === discordId);
     if (!user) return;
-    await setDoc(doc(db, 'discord_users', discordId), { ...user, role: newRole });
+    const nextUser = {
+      ...user,
+      role: newRole,
+      ...(newRole === 'admin' ? { adminPermissions: user.adminPermissions ?? { ...defaultAdminPermissions } } : {}),
+    };
+    if (newRole !== 'admin' && 'adminPermissions' in nextUser) {
+      delete (nextUser as AppUser & { adminPermissions?: AdminPermissions }).adminPermissions;
+    }
+    await setDoc(doc(db, 'discord_users', discordId), nextUser);
+  };
+
+  const updateAdminPermissions = async (discordId: string, permissions: AdminPermissions) => {
+    const user = appUsers.find(u => u.discordId === discordId);
+    if (!user || user.role !== 'admin') return;
+    await setDoc(doc(db, 'discord_users', discordId), { ...user, adminPermissions: permissions });
   };
 
   const updateUserProjects = async (discordId: string, projectIds: string[]) => {
@@ -403,16 +537,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <DataContext.Provider value={{
       discordUser,
+      currentAppUser,
       role,
       authLoading,
+      portalSyncError,
       discordLogin,
       discordLogout,
       isAdminOpen,
-      openAdmin: () => setIsAdminOpen(true),
-      closeAdmin: () => setIsAdminOpen(false),
+      openAdmin,
+      closeAdmin,
       isMemberPanelOpen,
       openMemberPanel,
-      closeMemberPanel: () => setIsMemberPanelOpen(false),
+      closeMemberPanel,
       faqData,
       addFAQ,
       removeFAQ,
@@ -433,6 +569,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       approveRequest,
       rejectRequest,
       updateUserRole,
+      updateAdminPermissions,
       updateUserProjects,
       removeUser,
     }}>
