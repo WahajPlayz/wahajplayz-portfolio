@@ -33,7 +33,7 @@ export const getStripe = () => {
   return stripeInstance;
 };
 
-export const getAppUrl = () => process.env.APP_URL || 'https://www.wahajplayz.org';
+export const getAppUrl = () => (process.env.APP_URL || 'https://wahajplayz.org').replace(/^(https?:\/\/)www\./, '$1').replace(/\/$/, '');
 
 export const normalizeCurrency = (currency) => {
   const code = String(currency || BASE_CURRENCY).toUpperCase();

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thank you — WahajPlayz</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #0d0e12; color: #9ca3af; font-family: monospace; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  </style>
+  <script>
+    (function () {
+      var sid = new URLSearchParams(window.location.search).get('session_id');
+      var target = '/#/donate/success' + (sid ? '?session_id=' + encodeURIComponent(sid) : '');
+      window.location.replace(target);
+    }());
+  </script>
+</head>
+<body>
+  <p>Processing&hellip;</p>
+</body>
+</html>

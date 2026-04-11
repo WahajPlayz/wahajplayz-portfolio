@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
-      success_url: `${returnOrigin}/#/donate/success?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${returnOrigin}/donate-success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${returnOrigin}/#/donate?checkout=cancel`,
       submit_type: 'donate',
       metadata: {
