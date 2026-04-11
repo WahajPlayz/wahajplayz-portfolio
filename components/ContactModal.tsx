@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { X, Send, MessageSquare, CheckCircle2, Loader2 } from 'lucide-react';
-
-const API = import.meta.env.VITE_STRIPE_API_BASE as string;
+import { FUNCTIONS_URL } from '@/lib/supabase';
 
 const ContactModal: React.FC = () => {
   const [open, setOpen] = useState(false);
@@ -29,7 +28,7 @@ const ContactModal: React.FC = () => {
     setSending(true);
     setError('');
     try {
-      const res = await fetch(`${API}/api/contact`, {
+      const res = await fetch(`${FUNCTIONS_URL}/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), email: email.trim(), subject: subject.trim(), message: message.trim() }),

@@ -2,9 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Send, MessageSquare, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { ensureAuth, getAuthToken } from '@/lib/supabase';
-
-const API = import.meta.env.VITE_STRIPE_API_BASE as string;
+import { ensureAuth, getAuthToken, FUNCTIONS_URL } from '@/lib/supabase';
 
 interface Message { id: string; text: string; senderRole: 'owner' | 'buyer'; senderName: string; createdAt: number; }
 interface Conversation { id: string; orderId: string; productNames: string[]; lastMessage: string; lastMessageAt: number; unreadBuyer: number; }
@@ -38,7 +36,7 @@ const MessagesPage: React.FC = () => {
     setLoading(true);
     try {
       const token = await getToken();
-      const res = await fetch(`${API}/api/messages/conversations`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${FUNCTIONS_URL}/messages-conversations`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setConversations(data.conversations || []);
     } finally { setLoading(false); }
@@ -49,11 +47,11 @@ const MessagesPage: React.FC = () => {
     setMessages([]);
     try {
       const token = await getToken();
-      const res = await fetch(`${API}/api/messages/thread?conversationId=${conv.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${FUNCTIONS_URL}/messages-thread?conversationId=${conv.id}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setMessages(data.messages || []);
       // Mark read
-      await fetch(`${API}/api/messages/conversations`, {
+      await fetch(`${FUNCTIONS_URL}/messages-conversations`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: conv.id, role: 'buyer' }),
@@ -67,7 +65,7 @@ const MessagesPage: React.FC = () => {
     setSending(true);
     try {
       const token = await getToken();
-      await fetch(`${API}/api/messages/send`, {
+      await fetch(`${FUNCTIONS_URL}/messages-send`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: activeConv.id, text: reply.trim(), senderRole: 'buyer' }),

@@ -5,7 +5,7 @@ import { useStore } from '../context/StoreContext';
 import { StoreProduct, StoreConfig, COUNTRIES } from '../config/storeConfig';
 import { Tier, AdminPermissions } from '../config/ownerConfig';
 import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search, MessageSquare, Send, Gamepad2, Sparkles, Wrench, Zap, Code } from 'lucide-react';
-import { ensureAuth, getAuthToken, supabase } from '../lib/supabase';
+import { ensureAuth, getAuthToken, supabase, FUNCTIONS_URL } from '../lib/supabase';
 import { uploadToGitHub } from '../lib/githubStorage';
 import { OWNER_DISCORD_ID } from '../lib/discord';
 
@@ -254,7 +254,7 @@ const AdminPanel: React.FC = () => {
   const [adminMessages, setAdminMessages] = useState<{id:string;text:string;senderRole:string;senderName:string;createdAt:number}[]>([]);
   const [adminReply, setAdminReply] = useState('');
   const [adminSending, setAdminSending] = useState(false);
-  const ADMIN_API = import.meta.env.VITE_STRIPE_API_BASE as string;
+  const ADMIN_API = FUNCTIONS_URL;
   // Fan contact messages
   const [contactMsgs, setContactMsgs] = useState<{id:string;name:string;email:string;subject:string;message:string;createdAt:number;read:boolean}[]>([]);
   const [contactLoading, setContactLoading] = useState(false);
@@ -272,7 +272,7 @@ const AdminPanel: React.FC = () => {
     try {
       await ensureAuth();
       const token = (await getAuthToken()) || '';
-      const res = await fetch(`${ADMIN_API}/api/messages/conversations?all=true`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${ADMIN_API}/messages-conversations?all=true`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setAdminConvs(data.conversations || []);
     } finally { setAdminConvsLoading(false); }
@@ -283,11 +283,11 @@ const AdminPanel: React.FC = () => {
     setAdminMessages([]);
     try {
       const token = (await getAuthToken()) || '';
-      const res = await fetch(`${ADMIN_API}/api/messages/thread?conversationId=${conv.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${ADMIN_API}/messages-thread?conversationId=${conv.id}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setAdminMessages(data.messages || []);
       // Mark as read for owner
-      await fetch(`${ADMIN_API}/api/messages/conversations`, {
+      await fetch(`${ADMIN_API}/messages-conversations`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: conv.id, role: 'owner' }),
@@ -301,7 +301,7 @@ const AdminPanel: React.FC = () => {
     setAdminSending(true);
     try {
       const token = (await getAuthToken()) || '';
-      await fetch(`${ADMIN_API}/api/messages/send`, {
+      await fetch(`${ADMIN_API}/messages-send`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: adminActiveConv.id, text: adminReply.trim(), senderRole: 'owner' }),
@@ -335,7 +335,7 @@ const AdminPanel: React.FC = () => {
     try {
       await ensureAuth();
       const token = (await getAuthToken()) || '';
-      const res = await fetch(`${ADMIN_API}/api/donations/list`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${ADMIN_API}/donations-list`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setDonorConvos(data.conversations || []);
     } finally { setDonorConvosLoading(false); }
@@ -348,7 +348,7 @@ const AdminPanel: React.FC = () => {
     try {
       await ensureAuth();
       const token = (await getAuthToken()) || '';
-      await fetch(`${ADMIN_API}/api/donations/reply`, {
+      await fetch(`${ADMIN_API}/donations-reply`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversationId: convId, text }),
@@ -519,7 +519,7 @@ const AdminPanel: React.FC = () => {
     setPurgeError('');
 
     try {
-      const response = await fetch(`${(import.meta.env.VITE_STRIPE_API_BASE || '').replace(/\/$/, '')}/api/admin/purge-team-members`, {
+      const response = await fetch(`${FUNCTIONS_URL}/purge-team-members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

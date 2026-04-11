@@ -5,6 +5,9 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+/** Base URL for Supabase Edge Functions, e.g. https://<ref>.supabase.co/functions/v1 */
+export const FUNCTIONS_URL = supabaseUrl.replace(/\/$/, '') + '/functions/v1';
+
 let anonAuthPromise: Promise<void> | null = null;
 
 /** Ensures a Supabase session exists (anonymous if not signed in). Replaces ensureStorageAuth(). */

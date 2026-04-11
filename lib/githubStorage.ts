@@ -1,6 +1,4 @@
-import { getAuthToken } from '@/lib/supabase';
-
-const API_BASE = import.meta.env.VITE_STRIPE_API_BASE as string;
+import { getAuthToken, FUNCTIONS_URL } from '@/lib/supabase';
 
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -21,7 +19,7 @@ export const uploadToGitHub = async (
 
   const token = (await getAuthToken()) ?? '';
 
-  const res = await fetch(`${API_BASE}/api/upload`, {
+  const res = await fetch(`${FUNCTIONS_URL}/upload`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
