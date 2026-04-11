@@ -1,398 +1,460 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Minus, Plus, ShoppingBag, Star } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Minus, Plus, ShoppingBag, Star, Download, Package } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { StoreProduct } from '@/config/storeConfig';
+import { isProductRestrictedInCountry, StoreProduct } from '@/config/storeConfig';
 import { useStore } from '@/context/StoreContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useCart } from '@/context/CartContext';
 
 type ProductReview = NonNullable<StoreProduct['reviews']>[number];
-type ProductColor = NonNullable<StoreProduct['colorOptions']>[number];
 
-const fallbackPalette = [
-  { id: 'red-flare', label: 'Red Flare', hex: '#ef4444' },
-  { id: 'carbon-black', label: 'Carbon Black', hex: '#111111' },
-  { id: 'ice-white', label: 'Ice White', hex: '#f8fafc' },
-  { id: 'electric-blue', label: 'Electric Blue', hex: '#2563eb' },
-  { id: 'lime-burst', label: 'Lime Burst', hex: '#84cc16' },
-];
-
-const seededReviews = (product: StoreProduct): ProductReview[] => product.reviews?.length
-  ? product.reviews
-  : [
-      { id: `${product.id}-review-1`, reviewer: 'Aaliyah', rating: 5, date: '2026-03-02', comment: 'Very clean finish and the colour looks better in person. I would order this again.' },
-      { id: `${product.id}-review-2`, reviewer: 'Marcus', rating: 4, date: '2026-02-19', comment: 'Print quality was consistent across the full roll. Packaging and delivery were solid too.' },
-      { id: `${product.id}-review-3`, reviewer: 'Rin', rating: 4, date: '2026-01-28', comment: 'Good value and easy to work with. I only wish there were even more colour choices.' },
-    ];
-
-const deriveProductView = (product: StoreProduct) => {
-  const galleryImages = [product.coverImage, ...(product.galleryImages || [])].filter(Boolean);
-  const colors = product.colorOptions?.length
-    ? product.colorOptions
-    : fallbackPalette.map((color, index) => ({
-        ...color,
-        imageUrl: index === 0 ? product.coverImage : galleryImages[index % Math.max(1, galleryImages.length)] || product.coverImage,
-      }));
-  return {
-    galleryImages: galleryImages.length > 0 ? galleryImages : colors.map(color => color.imageUrl).filter(Boolean),
-    features: product.features?.length ? product.features : [
-      'Designed for clean, repeatable results',
-      'Balanced for daily production use',
-      'Reliable finish with minimal setup friction',
-      'Built for makers who want consistent output',
-    ],
-    cautions: product.cautions?.length ? product.cautions : [
-      'Store in a cool, dry environment',
-      'Confirm printer compatibility before ordering',
-      'Inspect your setup before long print runs',
-    ],
-    warningMessage: product.warningMessage || 'Check your machine settings and material profile before starting a long run.',
-    colors,
-    types: product.typeOptions?.length ? product.typeOptions : ['Refill', 'With Spool'],
-    sizes: product.sizeOptions?.length ? product.sizeOptions : ['1kg', '2kg'],
-    bulkDiscounts: product.bulkDiscounts?.length ? product.bulkDiscounts : [
-      { label: '30% off 4+ items', minQuantity: 4, percentOff: 30 },
-      { label: '40% off 6+ items', minQuantity: 6, percentOff: 40 },
-    ],
-  };
-};
-
-const renderStars = (rating: number) => (
-  Array.from({ length: 5 }, (_, index) => (
+const renderStars = (rating: number, interactive?: { onChange: (v: number) => void }) =>
+  Array.from({ length: 5 }, (_, i) => (
     <Star
-      key={index}
+      key={i}
       size={16}
-      className={index < Math.round(rating) ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}
+      onClick={() => interactive?.onChange(i + 1)}
+      className={`${i < Math.round(rating) ? 'fill-amber-400 text-amber-400' : 'text-gray-600'} ${interactive ? 'cursor-pointer hover:text-amber-400' : ''}`}
     />
-  ))
-);
+  ));
 
 const StoreProductDetail: React.FC = () => {
   const { productId } = useParams();
   const navigate = useNavigate();
   const { config } = useStore();
-  const { formatPrice } = useCurrency();
+  const { formatPrice, userCountry } = useCurrency();
   const { addItem, openCart } = useCart();
 
-  const product = config.products.find(item => item.id === productId && item.enabled) || null;
-  const details = useMemo(() => product ? deriveProductView(product) : null, [product]);
+  const product = config.products.find(p => p.id === productId && p.enabled) || null;
+
+  const galleryImages = useMemo(() => {
+    if (!product) return [];
+    return [product.coverImage, ...(product.galleryImages || [])].filter(Boolean);
+  }, [product]);
 
   const [activeImage, setActiveImage] = useState('');
   const [selectedColorId, setSelectedColorId] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
   const [quantity, setQuantity] = useState(1);
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const [reviewName, setReviewName] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
+  const [addedFeedback, setAddedFeedback] = useState(false);
 
   useEffect(() => {
-    if (!product || !details) return;
-    setActiveImage(details.galleryImages[0] || product.coverImage || '');
-    setSelectedColorId(details.colors[0]?.id || '');
-    setSelectedType(details.types[0] || '');
-    setSelectedSize(details.sizes[0] || '');
+    if (!product) return;
+    setActiveImage(galleryImages[0] || '');
+    setSelectedColorId(product.colorOptions?.[0]?.id || '');
+    setSelectedType(product.typeOptions?.[0] || '');
+    setSelectedSize(product.sizeOptions?.[0] || '');
     setQuantity(1);
-    setReviews(seededReviews(product));
-  }, [product, details]);
+    setCustomAnswers({});
+    setReviews(product.reviews || []);
+  }, [product, galleryImages]);
 
-  if (!product || !details) {
+  if (!product) {
     return (
-      <div className="min-h-screen bg-white px-6 py-24 text-slate-900">
-        <div className="mx-auto max-w-5xl">
-          <button onClick={() => navigate('/store')} className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900">
-            <ArrowLeft size={16} /> Back to Shop
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0d0e12' }}>
+        <div className="text-center">
+          <ShoppingBag size={48} className="mx-auto mb-4 text-gray-700" />
+          <h1 className="font-orbitron font-bold text-xl text-white mb-2">Product not found</h1>
+          <p className="text-gray-500 font-mono text-sm mb-6">This item is unavailable or no longer listed.</p>
+          <button onClick={() => navigate('/store')} className="font-orbitron text-xs tracking-widest uppercase px-6 py-3 transition-all hover:scale-105"
+            style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff' }}>
+            Back to Shop
           </button>
-          <div className="mt-10 rounded-3xl border border-slate-200 p-10 text-center">
-            <h1 className="text-3xl font-bold">Product not found</h1>
-            <p className="mt-3 text-slate-500">This item is unavailable or no longer listed in the shop.</p>
-          </div>
         </div>
       </div>
     );
   }
 
-  const selectedColor = details.colors.find(color => color.id === selectedColorId) || details.colors[0];
-  const availableStock = product.stock ?? 12;
-  const maxQuantity = Math.max(1, availableStock);
-  const stockState = availableStock <= 0
-    ? { label: 'Out of Stock', className: 'bg-red-50 text-red-600' }
-    : availableStock <= 5
-      ? { label: `Low Stock (Only ${availableStock} left!)`, className: 'bg-orange-50 text-orange-600' }
-      : { label: 'In Stock', className: 'bg-emerald-50 text-emerald-600' };
+  const availableStock = product.stock ?? Infinity;
+  const maxQuantity = availableStock === Infinity ? 99 : Math.max(1, availableStock);
+  const isOutOfStock = product.stock === 0;
+  const salePercent = product.salePercent || 0;
+  const effectivePrice = salePercent > 0 ? Math.round(product.price * (1 - salePercent / 100) * 100) / 100 : product.price;
+  const selectedColor = product.colorOptions?.find(c => c.id === selectedColorId) || null;
+  const isBlockedInRegion = isProductRestrictedInCountry(product, userCountry);
 
-  const averageRating = reviews.reduce((sum, review) => sum + review.rating, 0) / Math.max(1, reviews.length);
-  const ratingBreakdown = [5, 4, 3, 2, 1].map(stars => {
-    const count = reviews.filter(review => review.rating === stars).length;
-    return {
-      stars,
-      count,
-      width: `${(count / Math.max(1, reviews.length)) * 100}%`,
-    };
-  });
+  const hasColors = (product.colorOptions?.length || 0) > 0;
+  const hasTypes = (product.typeOptions?.length || 0) > 0;
+  const hasSizes = (product.sizeOptions?.length || 0) > 0;
+  const hasCustomFields = (product.customFields?.length || 0) > 0;
+  const hasBulkDiscounts = (product.bulkDiscounts?.length || 0) > 0;
+
+  const missingRequired = product.customFields?.filter(f => f.required && !customAnswers[f.label]?.trim()) || [];
+  const canAdd = !isOutOfStock && !isBlockedInRegion && missingRequired.length === 0;
+
+  const averageRating = reviews.length > 0
+    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+    : 0;
 
   const onAddToCart = () => {
-    if (availableStock <= 0 || !selectedColor) return;
+    if (!canAdd) return;
     addItem({
       product,
       quantity,
       maxQuantity,
-      image: selectedColor.imageUrl || activeImage,
+      effectivePrice,
+      image: (selectedColor?.imageUrl || activeImage) || '',
       variant: {
-        colorId: selectedColor.id,
-        colorLabel: selectedColor.label,
+        colorId: selectedColor?.id || '',
+        colorLabel: selectedColor?.label || '',
         type: selectedType,
         size: selectedSize,
+        customAnswers: hasCustomFields ? Object.fromEntries(Object.entries(customAnswers).filter(([,v]) => v)) : undefined,
       },
     });
+    setAddedFeedback(true);
+    setTimeout(() => setAddedFeedback(false), 2000);
   };
 
-  const submitReview = (event: React.FormEvent) => {
-    event.preventDefault();
+  const submitReview = (e: React.FormEvent) => {
+    e.preventDefault();
     if (!reviewName.trim() || !reviewComment.trim()) return;
-    setReviews(current => [
-      {
-        id: `${product.id}-review-${Date.now()}`,
-        reviewer: reviewName.trim(),
-        rating: reviewRating,
-        date: new Date().toISOString().slice(0, 10),
-        comment: reviewComment.trim(),
-      },
-      ...current,
-    ]);
-    setReviewName('');
-    setReviewRating(5);
-    setReviewComment('');
+    setReviews(cur => [{
+      id: `${product.id}-${Date.now()}`,
+      reviewer: reviewName.trim(),
+      rating: reviewRating,
+      date: new Date().toISOString().slice(0, 10),
+      comment: reviewComment.trim(),
+    }, ...cur]);
+    setReviewName(''); setReviewRating(5); setReviewComment('');
   };
+
+  const inputClass = "w-full px-4 py-3 font-mono text-sm text-white outline-none focus:border-cyan-500/60 transition-colors"
+    + " bg-black/40 border border-white/10";
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
-      <div className="mx-auto max-w-7xl px-6 py-10 md:py-14">
-        <div className="mb-8 flex items-center justify-between gap-4">
-          <button onClick={() => navigate('/store')} className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900">
-            <ArrowLeft size={16} /> Back to Shop
+    <div className="min-h-screen text-white" style={{ backgroundColor: '#0d0e12' }}>
+      {/* Header */}
+      <div className="relative pt-28 pb-8 overflow-hidden" style={{ borderBottom: '1px solid rgba(0,212,255,0.1)' }}>
+        <div className="absolute inset-0 grid-bg opacity-10 pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-6 relative z-10 flex items-center justify-between">
+          <button onClick={() => navigate('/store')} className="flex items-center gap-2 text-gray-500 hover:text-white transition-colors font-mono text-xs">
+            <ArrowLeft size={14} /> Back to Shop
           </button>
-          <button onClick={openCart} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50">
-            <ShoppingBag size={16} /> View Cart
+          <button onClick={openCart} className="flex items-center gap-2 font-mono text-xs transition-colors hover:text-cyan-300" style={{ color: '#00d4ff' }}>
+            <ShoppingBag size={14} /> View Cart
           </button>
         </div>
+      </div>
 
-        <div className="grid gap-10 lg:grid-cols-[1.15fr_1fr] lg:items-start">
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Main grid */}
+        <div className="grid gap-12 lg:grid-cols-[1.1fr_1fr] lg:items-start">
+
+          {/* Left — gallery */}
           <div>
-            <div className="overflow-hidden rounded-[2rem] bg-slate-100">
+            <div className="overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', clipPath: 'polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)' }}>
               {activeImage ? (
-                <img src={activeImage} alt={product.name} className="h-full w-full object-cover" />
+                <img src={activeImage} alt={product.name} className="w-full object-cover" style={{ maxHeight: 480 }} />
               ) : (
-                <div className="flex min-h-[420px] items-center justify-center text-slate-300">
-                  <ShoppingBag size={40} />
+                <div className="flex items-center justify-center text-gray-700" style={{ minHeight: 380 }}>
+                  <ShoppingBag size={48} />
                 </div>
               )}
             </div>
-            <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
-              {details.galleryImages.map(image => (
-                <button
-                  key={image}
-                  onClick={() => setActiveImage(image)}
-                  className={`h-20 w-20 flex-shrink-0 overflow-hidden rounded-2xl border-2 transition-colors ${activeImage === image ? 'border-slate-900' : 'border-slate-200'}`}
-                >
-                  <img src={image} alt="" className="h-full w-full object-cover" />
-                </button>
-              ))}
-            </div>
+            {galleryImages.length > 1 && (
+              <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+                {galleryImages.map(img => (
+                  <button key={img} onClick={() => setActiveImage(img)}
+                    className="flex-shrink-0 h-16 w-16 overflow-hidden transition-all"
+                    style={{ border: activeImage === img ? '2px solid #00d4ff' : '2px solid rgba(255,255,255,0.08)', opacity: activeImage === img ? 1 : 0.6 }}>
+                    <img src={img} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Right — product info */}
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">{product.category || 'Product'}</p>
-            <h1 className="mt-3 text-4xl font-bold tracking-tight text-slate-950">{product.name}</h1>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="flex items-center gap-1 px-2 py-0.5 font-orbitron text-xs font-bold"
+                style={product.type === 'digital'
+                  ? { background: 'rgba(168,85,247,0.2)', border: '1px solid rgba(168,85,247,0.4)', color: '#d8b4fe' }
+                  : { background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.35)', color: '#00d4ff' }}>
+                {product.type === 'digital' ? <Download size={10} /> : <Package size={10} />} {product.type}
+              </span>
+              {product.category && <span className="font-mono text-xs text-gray-600">{product.category}</span>}
+            </div>
 
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <div className="text-3xl font-bold text-slate-950">{formatPrice(product.price, 'GBP')}</div>
-              {product.compareAtPrice > 0 && (
-                <div className="text-lg text-slate-400 line-through">{formatPrice(product.compareAtPrice, 'GBP')}</div>
+            <h1 className="font-orbitron font-black text-3xl md:text-4xl text-white mb-4">{product.name}</h1>
+
+            {/* Price */}
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <span className="font-orbitron font-black text-3xl" style={{ color: '#00d4ff' }}>{formatPrice(effectivePrice, 'GBP')}</span>
+              {salePercent > 0 && (
+                <>
+                  <span className="text-gray-500 text-lg line-through font-mono">{formatPrice(product.price, 'GBP')}</span>
+                  <span className="font-orbitron font-bold text-sm px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171' }}>{salePercent}% OFF</span>
+                </>
               )}
-              <div className={`rounded-full px-3 py-1 text-sm font-semibold ${stockState.className}`}>{stockState.label}</div>
+              {isOutOfStock ? (
+                <span className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>Out of Stock</span>
+              ) : isBlockedInRegion ? (
+                <span className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>Not available in your region</span>
+              ) : product.stock !== null && product.stock <= 5 ? (
+                <span className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>Only {product.stock} left</span>
+              ) : (
+                <span className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80' }}>In Stock</span>
+              )}
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
-              {details.bulkDiscounts.map(discount => (
-                <span key={discount.label} className="rounded-full bg-orange-50 px-3 py-1 text-sm font-semibold text-orange-600">
-                  {discount.label}
-                </span>
-              ))}
-            </div>
+            {/* Bulk discounts */}
+            {hasBulkDiscounts && (
+              <div className="flex flex-wrap gap-2 mb-6">
+                {product.bulkDiscounts!.map(d => (
+                  <span key={d.label} className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', color: '#fbbf24' }}>{d.label}</span>
+                ))}
+              </div>
+            )}
 
-            <div className="mt-8 grid gap-8 border-y border-slate-200 py-8">
-              <div>
-                <h2 className="text-xl font-semibold">Product Features</h2>
-                <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-600">
-                  {details.features.map(feature => <li key={feature}>{feature}</li>)}
+            {/* Description */}
+            {product.description && (
+              <p className="text-gray-400 font-mono text-sm leading-relaxed mb-6">{product.description}</p>
+            )}
+
+            {/* Features */}
+            {(product.features?.length || 0) > 0 && (
+              <div className="mb-6 p-4" style={{ background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.12)' }}>
+                <p className="font-orbitron font-bold text-xs tracking-widest text-cyan-400 mb-3">FEATURES</p>
+                <ul className="space-y-1.5">
+                  {product.features!.map(f => (
+                    <li key={f} className="flex items-start gap-2 font-mono text-xs text-gray-400">
+                      <span style={{ color: '#00d4ff' }}>›</span> {f}
+                    </li>
+                  ))}
                 </ul>
               </div>
+            )}
 
-              <div>
-                <h2 className="text-xl font-semibold">Cautions / Notes</h2>
-                <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-600">
-                  {details.cautions.map(note => <li key={note}>{note}</li>)}
+            {/* Cautions */}
+            {(product.cautions?.length || 0) > 0 && (
+              <div className="mb-6 p-4" style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle size={14} style={{ color: '#fbbf24' }} />
+                  <p className="font-orbitron font-bold text-xs tracking-widest" style={{ color: '#fbbf24' }}>CAUTIONS</p>
+                </div>
+                <ul className="space-y-1">
+                  {product.cautions!.map(c => <li key={c} className="font-mono text-xs text-gray-500">{c}</li>)}
                 </ul>
-                <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-700">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle size={18} className="mt-0.5 flex-shrink-0" />
-                    <p>{details.warningMessage}</p>
-                  </div>
+                {product.warningMessage && <p className="mt-3 font-mono text-xs" style={{ color: '#f59e0b' }}>{product.warningMessage}</p>}
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="my-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+
+            {/* Color variant */}
+            {hasColors && (
+              <div className="mb-6">
+                <p className="font-orbitron font-bold text-xs tracking-widest text-gray-400 mb-1">COLOUR</p>
+                {selectedColor && <p className="font-mono text-sm text-white mb-3">{selectedColor.label}</p>}
+                <div className="flex flex-wrap gap-3">
+                  {product.colorOptions!.map(c => (
+                    <button key={c.id} onClick={() => { setSelectedColorId(c.id); if (c.imageUrl) setActiveImage(c.imageUrl); }}
+                      className="h-10 w-10 rounded-full p-1 transition-transform hover:scale-110"
+                      style={{ border: selectedColorId === c.id ? '2px solid #00d4ff' : '2px solid rgba(255,255,255,0.15)' }}
+                      title={c.label}>
+                      <span className="block w-full h-full rounded-full" style={{ backgroundColor: c.hex }} />
+                    </button>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="mt-8">
-              <p className="text-sm font-semibold text-slate-500">Colour</p>
-              <p className="mt-2 text-lg font-semibold">{selectedColor?.label || 'Select a colour'}</p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                {details.colors.map(color => (
-                  <button
-                    key={color.id}
-                    onClick={() => {
-                      setSelectedColorId(color.id);
-                      if (color.imageUrl) setActiveImage(color.imageUrl);
-                    }}
-                    className={`h-11 w-11 rounded-full border-2 p-1 transition-transform hover:scale-105 ${selectedColor?.id === color.id ? 'border-slate-900' : 'border-slate-200'}`}
-                    aria-label={color.label}
-                  >
-                    <span className="block h-full w-full rounded-full border border-white" style={{ backgroundColor: color.hex }} />
-                  </button>
-                ))}
+            {/* Type variant */}
+            {hasTypes && (
+              <div className="mb-6">
+                <p className="font-orbitron font-bold text-xs tracking-widest text-gray-400 mb-3">TYPE</p>
+                <div className="flex flex-wrap gap-2">
+                  {product.typeOptions!.map(opt => (
+                    <button key={opt} onClick={() => setSelectedType(opt)}
+                      className="px-5 py-2 font-orbitron text-xs font-bold tracking-wider transition-all"
+                      style={selectedType === opt
+                        ? { background: 'rgba(0,212,255,0.15)', border: '1px solid #00d4ff', color: '#00d4ff' }
+                        : { background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#9ca3af' }}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="mt-8">
-              <p className="text-sm font-semibold text-slate-500">Type</p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                {details.types.map(option => (
-                  <button
-                    key={option}
-                    onClick={() => setSelectedType(option)}
-                    className={`rounded-full px-5 py-3 text-sm font-semibold transition-colors ${selectedType === option ? 'bg-slate-900 text-white' : 'border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
-                  >
-                    {option}
-                  </button>
-                ))}
+            {/* Size variant */}
+            {hasSizes && (
+              <div className="mb-6">
+                <p className="font-orbitron font-bold text-xs tracking-widest text-gray-400 mb-3">SIZE</p>
+                <div className="flex flex-wrap gap-2">
+                  {product.sizeOptions!.map(opt => (
+                    <button key={opt} onClick={() => setSelectedSize(opt)}
+                      className="px-5 py-2 font-orbitron text-xs font-bold tracking-wider transition-all"
+                      style={selectedSize === opt
+                        ? { background: 'rgba(0,212,255,0.15)', border: '1px solid #00d4ff', color: '#00d4ff' }
+                        : { background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: '#9ca3af' }}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="mt-8">
-              <p className="text-sm font-semibold text-slate-500">Size</p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                {details.sizes.map(option => (
-                  <button
-                    key={option}
-                    onClick={() => setSelectedSize(option)}
-                    className={`rounded-full px-5 py-3 text-sm font-semibold transition-colors ${selectedSize === option ? 'bg-slate-900 text-white' : 'border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
-                  >
-                    {option}
-                  </button>
-                ))}
+            {/* Custom fields (Etsy-style personalization) */}
+            {hasCustomFields && (
+              <div className="mb-6 p-4" style={{ background: 'rgba(168,85,247,0.05)', border: '1px solid rgba(168,85,247,0.2)' }}>
+                <p className="font-orbitron font-bold text-xs tracking-widest mb-4" style={{ color: '#d8b4fe' }}>PERSONALIZATION</p>
+                <div className="space-y-4">
+                  {product.customFields!.map(field => (
+                    <div key={field.id}>
+                      <label className="block font-mono text-xs text-gray-400 mb-1.5">
+                        {field.label}{field.required && <span style={{ color: '#f87171' }}> *</span>}
+                      </label>
+                      {field.type === 'color-picker' && field.colorSwatches?.length ? (
+                        <div className="flex flex-wrap gap-3">
+                          {field.colorSwatches.map(swatch => {
+                            const selected = customAnswers[field.label] === swatch.name;
+                            return (
+                              <button key={swatch.name} onClick={() => setCustomAnswers(a => ({ ...a, [field.label]: swatch.name }))}
+                                className="flex flex-col items-center gap-1.5 group">
+                                <span className="w-10 h-10 rounded-full transition-transform group-hover:scale-110"
+                                  style={{ backgroundColor: swatch.hex, border: selected ? '3px solid #00d4ff' : '2px solid rgba(255,255,255,0.2)', boxShadow: selected ? '0 0 0 2px rgba(0,212,255,0.3)' : 'none' }} />
+                                <span className="font-mono text-[10px]" style={{ color: selected ? '#00d4ff' : '#6b7280' }}>{swatch.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : field.type === 'color-picker' ? (
+                        <p className="font-mono text-xs text-gray-600">No colours added yet by the shop owner.</p>
+                      ) : field.type === 'select' && field.options?.length ? (
+                        <select value={customAnswers[field.label] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [field.label]: e.target.value }))}
+                          className={inputClass} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                          <option value="">Select an option...</option>
+                          {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      ) : (
+                        <input value={customAnswers[field.label] || ''} onChange={e => setCustomAnswers(a => ({ ...a, [field.label]: e.target.value }))}
+                          placeholder={field.placeholder || ''}
+                          className={inputClass} style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)' }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="mt-8">
-              <p className="text-sm font-semibold text-slate-500">Quantity</p>
-              <div className="mt-3 flex items-center gap-4">
-                <div className="flex items-center rounded-full border border-slate-200">
-                  <button onClick={() => setQuantity(current => Math.max(1, current - 1))} className="px-4 py-3 text-slate-500 hover:text-slate-900">
-                    <Minus size={16} />
+            {/* Quantity */}
+            <div className="mb-8">
+              <p className="font-orbitron font-bold text-xs tracking-widest text-gray-400 mb-3">QUANTITY</p>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center" style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
+                  <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="px-4 py-3 text-gray-500 hover:text-white transition-colors">
+                    <Minus size={14} />
                   </button>
-                  <input
-                    value={quantity}
-                    onChange={event => {
-                      const nextValue = Number(event.target.value.replace(/\D/g, '')) || 1;
-                      setQuantity(Math.max(1, Math.min(maxQuantity, nextValue)));
-                    }}
-                    className="w-14 border-none text-center text-base font-semibold outline-none"
-                  />
-                  <button onClick={() => setQuantity(current => Math.min(maxQuantity, current + 1))} className="px-4 py-3 text-slate-500 hover:text-slate-900">
-                    <Plus size={16} />
+                  <input value={quantity}
+                    onChange={e => setQuantity(Math.max(1, Math.min(maxQuantity, Number(e.target.value.replace(/\D/g, '')) || 1)))}
+                    className="w-12 text-center bg-transparent text-white font-orbitron font-bold text-sm outline-none" />
+                  <button onClick={() => setQuantity(q => Math.min(maxQuantity, q + 1))} className="px-4 py-3 text-gray-500 hover:text-white transition-colors">
+                    <Plus size={14} />
                   </button>
                 </div>
-                <p className="text-sm text-slate-500">Max {maxQuantity}</p>
+                {product.stock !== null && <p className="font-mono text-xs text-gray-600">Max {maxQuantity}</p>}
               </div>
             </div>
 
-            <button
-              onClick={onAddToCart}
-              disabled={availableStock <= 0}
-              className="mt-10 w-full rounded-full bg-slate-900 px-6 py-4 text-base font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              Add to Cart
+            {/* Missing required fields warning */}
+            {missingRequired.length > 0 && (
+              <p className="font-mono text-xs mb-3" style={{ color: '#f87171' }}>
+                Please fill in: {missingRequired.map(f => f.label).join(', ')}
+              </p>
+            )}
+            {isBlockedInRegion && (
+              <p className="font-mono text-xs mb-3" style={{ color: '#f87171' }}>
+                This physical item is not available for shipping to your region.
+              </p>
+            )}
+
+            {/* Add to Cart */}
+            <button onClick={onAddToCart} disabled={!canAdd}
+              className="w-full py-4 font-orbitron font-bold text-sm tracking-widest uppercase transition-all hover:scale-[1.02] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+              style={{
+                background: addedFeedback ? 'rgba(34,197,94,0.15)' : 'rgba(0,212,255,0.12)',
+                border: addedFeedback ? '1px solid rgba(34,197,94,0.5)' : '1px solid rgba(0,212,255,0.4)',
+                color: addedFeedback ? '#4ade80' : '#00d4ff',
+                clipPath: 'polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%)',
+              }}>
+              {isOutOfStock ? 'Out of Stock' : isBlockedInRegion ? 'Not Available In Your Region' : addedFeedback ? 'Added to Cart!' : 'Add to Cart'}
             </button>
           </div>
         </div>
 
-        <section className="mt-20 border-t border-slate-200 pt-14">
-          <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr]">
+        {/* Reviews */}
+        <section className="mt-20 pt-12" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <p className="font-mono text-xs tracking-widest mb-2" style={{ color: '#00d4ff' }}>// REVIEWS</p>
+          <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr]">
+            {/* Rating summary */}
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-400">Reviews & Ratings</p>
-              <div className="mt-5 flex items-end gap-4">
-                <div className="text-5xl font-bold tracking-tight">{averageRating.toFixed(1)}</div>
-                <div>
-                  <div className="flex items-center gap-1">{renderStars(averageRating)}</div>
-                  <p className="mt-2 text-sm text-slate-500">Based on {reviews.length} reviews</p>
-                </div>
-              </div>
-
-              <div className="mt-8 space-y-3">
-                {ratingBreakdown.map(item => (
-                  <div key={item.stars} className="flex items-center gap-4">
-                    <span className="w-10 text-sm font-medium text-slate-500">{item.stars} star</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-amber-400" style={{ width: item.width }} />
+              {reviews.length > 0 ? (
+                <>
+                  <div className="flex items-end gap-4 mb-6">
+                    <span className="font-orbitron font-black text-5xl text-white">{averageRating.toFixed(1)}</span>
+                    <div>
+                      <div className="flex gap-0.5 mb-1">{renderStars(averageRating)}</div>
+                      <p className="font-mono text-xs text-gray-600">{reviews.length} review{reviews.length !== 1 ? 's' : ''}</p>
                     </div>
-                    <span className="w-8 text-right text-sm text-slate-500">{item.count}</span>
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-2">
+                    {[5,4,3,2,1].map(stars => {
+                      const count = reviews.filter(r => r.rating === stars).length;
+                      return (
+                        <div key={stars} className="flex items-center gap-3">
+                          <span className="font-mono text-xs text-gray-600 w-10">{stars} star</span>
+                          <div className="flex-1 h-1.5 overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                            <div className="h-full" style={{ width: `${(count / reviews.length) * 100}%`, background: '#fbbf24' }} />
+                          </div>
+                          <span className="font-mono text-xs text-gray-600 w-4 text-right">{count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p className="font-mono text-sm text-gray-600">No reviews yet. Be the first!</p>
+              )}
             </div>
 
-            <div className="grid gap-8">
-              <div className="space-y-5">
-                {reviews.map(review => (
-                  <article key={review.id} className="rounded-3xl border border-slate-200 p-6">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold text-slate-950">{review.reviewer}</h3>
-                        <p className="mt-1 text-sm text-slate-500">{new Date(review.date).toLocaleDateString()}</p>
-                      </div>
-                      <div className="flex items-center gap-1">{renderStars(review.rating)}</div>
+            {/* Review list + form */}
+            <div className="space-y-6">
+              {reviews.map(r => (
+                <article key={r.id} className="p-5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <p className="font-orbitron font-bold text-sm text-white">{r.reviewer}</p>
+                      <p className="font-mono text-xs text-gray-600 mt-0.5">{new Date(r.date).toLocaleDateString()}</p>
                     </div>
-                    <p className="mt-4 text-sm leading-6 text-slate-600">{review.comment}</p>
-                  </article>
-                ))}
-              </div>
+                    <div className="flex gap-0.5">{renderStars(r.rating)}</div>
+                  </div>
+                  <p className="font-mono text-xs text-gray-400 leading-relaxed">{r.comment}</p>
+                </article>
+              ))}
 
-              <form onSubmit={submitReview} className="rounded-3xl border border-slate-200 p-6">
-                <h3 className="text-xl font-semibold">Leave a Review</h3>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <input
-                    value={reviewName}
-                    onChange={event => setReviewName(event.target.value)}
-                    placeholder="Your name"
-                    className="rounded-2xl border border-slate-200 px-4 py-3 outline-none transition-colors focus:border-slate-900"
-                  />
-                  <select
-                    value={reviewRating}
-                    onChange={event => setReviewRating(Number(event.target.value))}
-                    className="rounded-2xl border border-slate-200 px-4 py-3 outline-none transition-colors focus:border-slate-900"
-                  >
-                    {[5, 4, 3, 2, 1].map(value => <option key={value} value={value}>{value} Stars</option>)}
-                  </select>
+              <form onSubmit={submitReview} className="p-5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <p className="font-orbitron font-bold text-sm text-white mb-4">Leave a Review</p>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <input value={reviewName} onChange={e => setReviewName(e.target.value)} placeholder="Your name"
+                    className={inputClass} style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                  <div className="flex items-center gap-1 px-3" style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.4)' }}>
+                    {renderStars(reviewRating, { onChange: setReviewRating })}
+                  </div>
                 </div>
-                <textarea
-                  value={reviewComment}
-                  onChange={event => setReviewComment(event.target.value)}
-                  placeholder="What did you think?"
-                  rows={5}
-                  className="mt-4 w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition-colors focus:border-slate-900"
-                />
-                <button type="submit" className="mt-4 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-700">
+                <textarea value={reviewComment} onChange={e => setReviewComment(e.target.value)} placeholder="What did you think?" rows={4}
+                  className={inputClass + ' resize-none'} style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                <button type="submit" className="mt-3 px-6 py-2.5 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105"
+                  style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.35)', color: '#00d4ff' }}>
                   Submit Review
                 </button>
               </form>

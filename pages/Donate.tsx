@@ -1,17 +1,52 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import GoalBar from '@/components/GoalBar';
 import DonationPanel from '@/components/DonationPanel';
 import { useSupportData } from '@/context/SupportContext';
 import { useAuth } from '@/context/AuthContext';
 
+const API_BASE = (import.meta as any).env?.VITE_STRIPE_API_BASE as string || '';
+
+interface PublicDonor {
+  id: string;
+  donorName: string;
+  amountGBP: number;
+  message: string;
+  createdAt: number;
+  ownerReply: string | null;
+}
+
 const DonatePage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { config } = useSupportData();
   const { user } = useAuth();
   const { donatePage, posts } = config;
 
   const [selectedPost, setSelectedPost] = useState<typeof posts[0] | null>(null);
+  const [donors, setDonors] = useState<PublicDonor[]>([]);
+
+  useEffect(() => {
+    if (!API_BASE) return;
+    fetch(`${API_BASE}/api/donations/public`)
+      .then(r => r.json())
+      .then(d => setDonors(d.donors || []))
+      .catch(() => {});
+  }, []);
+
+  // Re-fetch donors after Stripe redirects back with checkout=success,
+  // giving the webhook ~4 seconds to process and write to Firestore.
+  useEffect(() => {
+    if (!API_BASE) return;
+    if (!location.search.includes('checkout=success')) return;
+    const timer = setTimeout(() => {
+      fetch(`${API_BASE}/api/donations/public`)
+        .then(r => r.json())
+        .then(d => setDonors(d.donors || []))
+        .catch(() => {});
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [location.search]);
 
   const publicPosts = posts.filter(p => p.visibility === 'public');
   const sorted = [...publicPosts].sort((a, b) => {
@@ -71,6 +106,62 @@ const DonatePage: React.FC = () => {
       <div className="max-w-5xl mx-auto px-6 mb-20">
         <DonationPanel />
       </div>
+
+      <div className="max-w-5xl mx-auto px-6 mb-20">
+          <div className="mb-8">
+            <p className="text-xs font-orbitron tracking-[0.28em] uppercase text-pink-400 mb-2">Community</p>
+            <h2 className="font-orbitron font-black text-3xl text-white">Supporter Wall</h2>
+            <p className="text-gray-500 text-sm mt-2 max-w-2xl">Messages from people who've supported this project.</p>
+          </div>
+          {donors.length === 0 ? (
+            <div
+              className="rounded-2xl border p-10 flex flex-col items-center justify-center text-center"
+              style={{ background: 'rgba(255,255,255,0.025)', borderColor: 'rgba(236,72,153,0.18)' }}
+            >
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center mb-4"
+                style={{ background: 'linear-gradient(135deg,rgba(236,72,153,0.2),rgba(168,85,247,0.15))' }}
+              >
+                <span style={{ fontSize: 22 }}>💜</span>
+              </div>
+              <p className="font-orbitron text-sm text-white mb-1">No donations yet</p>
+              <p className="text-gray-600 text-xs">Be the first to leave a message of support.</p>
+            </div>
+          ) : (
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 space-y-4">
+              {donors.map(donor => (
+                <div
+                  key={donor.id}
+                  className="break-inside-avoid rounded-2xl border p-5"
+                  style={{ background: 'rgba(255,255,255,0.025)', borderColor: 'rgba(236,72,153,0.18)' }}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-orbitron font-black text-sm"
+                      style={{ background: 'linear-gradient(135deg,rgba(236,72,153,0.25),rgba(168,85,247,0.2))', color: '#f9a8d4' }}
+                    >
+                      {donor.donorName[0]?.toUpperCase() || '?'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-white font-bold text-sm truncate">{donor.donorName}</p>
+                      <p className="text-pink-400 font-mono text-xs">£{Number(donor.amountGBP).toFixed(2)}</p>
+                    </div>
+                    <span className="ml-auto text-gray-600 text-[11px] flex-shrink-0">
+                      {new Date(donor.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                  <p className="text-gray-300 text-sm leading-relaxed italic">"{donor.message}"</p>
+                  {donor.ownerReply && (
+                    <div className="mt-3 pl-3 border-l-2 border-cyan-500/40">
+                      <p className="text-xs text-cyan-400 font-orbitron mb-1">WahajPlayz</p>
+                      <p className="text-gray-400 text-xs leading-relaxed">{donor.ownerReply}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
       {sorted.length > 0 && (
         <div className="max-w-5xl mx-auto px-6 pb-20">

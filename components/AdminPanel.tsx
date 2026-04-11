@@ -4,7 +4,7 @@ import { useSupportData } from '../context/SupportContext';
 import { useStore } from '../context/StoreContext';
 import { StoreProduct, StoreConfig, COUNTRIES } from '../config/storeConfig';
 import { Tier, AdminPermissions } from '../config/ownerConfig';
-import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search } from 'lucide-react';
+import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search, MessageSquare, Send, Gamepad2, Sparkles, Wrench, Zap, Code } from 'lucide-react';
 import { ensureStorageAuth } from '../lib/firebase';
 import { uploadToGitHub } from '../lib/githubStorage';
 import { OWNER_DISCORD_ID } from '../lib/discord';
@@ -25,6 +25,9 @@ const blankTier = (): Tier => ({
 const compressImage = (file: File, maxDim = 1920, quality = 0.82): Promise<File> =>
   new Promise((resolve) => {
     if (!file.type.startsWith('image/')) { resolve(file); return; }
+    const isPng = file.type === 'image/png';
+    const outMime = isPng ? 'image/png' : 'image/jpeg';
+    const outExt = isPng ? '.png' : '.jpg';
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
@@ -35,14 +38,16 @@ const compressImage = (file: File, maxDim = 1920, quality = 0.82): Promise<File>
       else { width = Math.round(width * maxDim / height); height = maxDim; }
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      const ctx = canvas.getContext('2d')!;
+      if (isPng) ctx.clearRect(0, 0, width, height); // preserve transparency
+      ctx.drawImage(img, 0, 0, width, height);
       canvas.toBlob(
         (blob) => {
           if (!blob) { resolve(file); return; }
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, outExt), { type: outMime }));
         },
-        'image/jpeg',
-        quality
+        outMime,
+        isPng ? undefined : quality
       );
     };
     img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
@@ -76,6 +81,12 @@ service cloud.firestore {
       match /memberships/{membershipId} {
         allow read: if request.auth != null && request.auth.uid == userId;
         allow write: if request.auth != null;
+      }
+    }
+    match /conversations/{convId} {
+      allow read, write: if request.auth != null;
+      match /messages/{msgId} {
+        allow read, write: if request.auth != null;
       }
     }
   }
@@ -139,10 +150,13 @@ const AdminPanel: React.FC = () => {
     addProject,
     removeProject,
     renameProject,
+    updateProject,
     addSection,
     removeSection,
+    renameSection,
     addStep,
     removeStep,
+    renameStep,
     toggleStep,
     reorderProjects,
     reorderSections,
@@ -155,7 +169,7 @@ const AdminPanel: React.FC = () => {
     removeUser,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'goal' | 'membership' | 'posts' | 'donation' | 'store' | 'permissions'>('roadmap');
+  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'goal' | 'membership' | 'posts' | 'donation' | 'store' | 'orders' | 'permissions'>('roadmap');
   const [newFaqQ, setNewFaqQ] = useState('');
   const [newFaqA, setNewFaqA] = useState('');
   const [newProjTitle, setNewProjTitle] = useState('');
@@ -170,9 +184,13 @@ const AdminPanel: React.FC = () => {
   // Editing member projects
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
-  // Renaming projects
+  // Renaming projects / sections / steps
   const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renamingSectionKey, setRenamingSectionKey] = useState<string | null>(null); // `${projectId}-${sectionId}`
+  const [renamingSectionValue, setRenamingSectionValue] = useState('');
+  const [editingStepKey, setEditingStepKey] = useState<string | null>(null); // `${projectId}-${sectionId}-${stepId}`
+  const [editingStepValue, setEditingStepValue] = useState('');
 
   // Password-based owner login (alternative to Discord)
   const [passwordInput, setPasswordInput] = useState('');
@@ -191,7 +209,7 @@ const AdminPanel: React.FC = () => {
   };
 
   // Support data
-  const { config, saveMembership, savePosts, saveGoal, saveDonation, savePageContent, saveAdminPermissions } = useSupportData();
+  const { config, saveMembership, savePosts, saveGoals, saveDonation, savePageContent, saveAdminPermissions } = useSupportData();
   const [approveAdminPermissions, setApproveAdminPermissions] = useState<AdminPermissions>(config.adminPermissions);
 
   // Store data
@@ -202,10 +220,11 @@ const AdminPanel: React.FC = () => {
   useEffect(() => { setStoreData(storeConfig); }, [storeConfig]);
   const blankProduct = (): StoreProduct => ({
     id: 'prod-' + Date.now(),
-    name: '', description: '', price: 0, compareAtPrice: 0,
+    name: '', description: '', price: 0, salePercent: 0,
     type: 'digital', category: '', coverImage: '', stripeUrl: '',
     digitalFileUrl: '', digitalFileName: '',
-    stock: null, enabled: true, featured: false, tags: [], blockedCountries: [],
+    stock: null, enabled: true, featured: false, tags: [],
+    shippingCountryMode: 'all-except-blocked', blockedCountries: [], allowedCountries: [], customFields: [],
   });
   const setP = (patch: Partial<StoreProduct>) => setEditingProduct(ep => ep ? { ...ep, ...patch } : ep);
 
@@ -218,6 +237,7 @@ const AdminPanel: React.FC = () => {
   const [membershipSaving, setMembershipSaving] = useState(false);
   const [membershipUploadError, setMembershipUploadError] = useState('');
   const [membershipUploadStatus, setMembershipUploadStatus] = useState('');
+  const [roadmapUploadStatus, setRoadmapUploadStatus] = useState<Record<string, string>>({});
 
   // Posts editor
   type PostDraft = typeof config.posts[0];
@@ -235,7 +255,8 @@ const AdminPanel: React.FC = () => {
   const [postUploadStatus, setPostUploadStatus] = useState('');
 
   // Goal editor
-  const [goalDraft, setGoalDraft] = useState(config.goal);
+  const [goalsDraft, setGoalsDraft] = useState(config.goals ?? []);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [goalSaving, setGoalSaving] = useState(false);
   const [newMilestoneAmount, setNewMilestoneAmount] = useState('');
   const [newMilestoneLabel, setNewMilestoneLabel] = useState('');
@@ -252,6 +273,126 @@ const AdminPanel: React.FC = () => {
   const [storeUploadError, setStoreUploadError] = useState('');
   const [storeUploadSuccess, setStoreUploadSuccess] = useState('');
   const [storeUploadStatus, setStoreUploadStatus] = useState('');
+  // Orders & Messages tab state
+  const [adminConvs, setAdminConvs] = useState<{id:string;orderId:string;buyerName:string;buyerEmail:string;productNames:string[];lastMessage:string;lastMessageAt:number;unreadOwner:number}[]>([]);
+  const [adminConvsLoading, setAdminConvsLoading] = useState(false);
+  const [adminActiveConv, setAdminActiveConv] = useState<typeof adminConvs[0]|null>(null);
+  const [adminMessages, setAdminMessages] = useState<{id:string;text:string;senderRole:string;senderName:string;createdAt:number}[]>([]);
+  const [adminReply, setAdminReply] = useState('');
+  const [adminSending, setAdminSending] = useState(false);
+  const ADMIN_API = import.meta.env.VITE_STRIPE_API_BASE as string;
+  // Fan contact messages
+  const [contactMsgs, setContactMsgs] = useState<{id:string;name:string;email:string;subject:string;message:string;createdAt:number;read:boolean}[]>([]);
+  const [contactLoading, setContactLoading] = useState(false);
+  const [activeContactMsg, setActiveContactMsg] = useState<typeof contactMsgs[0]|null>(null);
+  const [ordersSubTab, setOrdersSubTab] = useState<'orders'|'contact'>('orders');
+  // Donor conversations state
+  const [donorConvos, setDonorConvos] = useState<{id:string;transactionId:string;donorName:string;donorEmail:string|null;amountGBP:number;message:string;createdAt:number;replied:boolean;lastReplyAt:number|null}[]>([]);
+  const [donorConvosLoading, setDonorConvosLoading] = useState(false);
+  const [expandedDonorId, setExpandedDonorId] = useState<string|null>(null);
+  const [donorReplyText, setDonorReplyText] = useState<Record<string,string>>({});
+  const [donorReplying, setDonorReplying] = useState<string|null>(null);
+
+  const loadAdminConvs = async () => {
+    setAdminConvsLoading(true);
+    try {
+      await ensureStorageAuth();
+      const { getAuth } = await import('firebase/auth');
+      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      const res = await fetch(`${ADMIN_API}/api/messages/conversations?all=true`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      setAdminConvs(data.conversations || []);
+    } finally { setAdminConvsLoading(false); }
+  };
+
+  const openAdminConv = async (conv: typeof adminConvs[0]) => {
+    setAdminActiveConv(conv);
+    setAdminMessages([]);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      const res = await fetch(`${ADMIN_API}/api/messages/thread?conversationId=${conv.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      setAdminMessages(data.messages || []);
+      // Mark as read for owner
+      await fetch(`${ADMIN_API}/api/messages/conversations`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: conv.id, role: 'owner' }),
+      });
+      setAdminConvs(c => c.map(x => x.id === conv.id ? { ...x, unreadOwner: 0 } : x));
+    } catch { /* ignore */ }
+  };
+
+  const sendAdminReply = async () => {
+    if (!adminReply.trim() || !adminActiveConv || adminSending) return;
+    setAdminSending(true);
+    try {
+      const { getAuth } = await import('firebase/auth');
+      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      await fetch(`${ADMIN_API}/api/messages/send`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: adminActiveConv.id, text: adminReply.trim(), senderRole: 'owner' }),
+      });
+      setAdminMessages(m => [...m, { id: Date.now().toString(), text: adminReply.trim(), senderRole: 'owner', senderName: 'WahajPlayz', createdAt: Date.now() }]);
+      setAdminReply('');
+    } finally { setAdminSending(false); }
+  };
+
+  const loadContactMsgs = async () => {
+    setContactLoading(true);
+    try {
+      await ensureStorageAuth();
+      const { getFirestore, collection, getDocs, orderBy, query } = await import('firebase/firestore');
+      const db = getFirestore();
+      const q = query(collection(db, 'contact_messages'), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      setContactMsgs(snap.docs.map(d => d.data() as any));
+    } finally { setContactLoading(false); }
+  };
+
+  const markContactRead = async (msg: typeof contactMsgs[0]) => {
+    if (msg.read) return;
+    try {
+      await ensureStorageAuth();
+      const { getFirestore, doc, updateDoc } = await import('firebase/firestore');
+      await updateDoc(doc(getFirestore(), 'contact_messages', msg.id), { read: true });
+      setContactMsgs(m => m.map(x => x.id === msg.id ? { ...x, read: true } : x));
+    } catch { /* ignore */ }
+  };
+
+  const loadDonorConvos = async () => {
+    setDonorConvosLoading(true);
+    try {
+      await ensureStorageAuth();
+      const { getAuth } = await import('firebase/auth');
+      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      const res = await fetch(`${ADMIN_API}/api/donations/list`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      setDonorConvos(data.conversations || []);
+    } finally { setDonorConvosLoading(false); }
+  };
+
+  const sendDonorReply = async (convId: string) => {
+    const text = donorReplyText[convId]?.trim();
+    if (!text) return;
+    setDonorReplying(convId);
+    try {
+      await ensureStorageAuth();
+      const { getAuth } = await import('firebase/auth');
+      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      await fetch(`${ADMIN_API}/api/donations/reply`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: convId, text }),
+      });
+      setDonorConvos(prev => prev.map(c => c.id === convId ? { ...c, replied: true, lastReplyAt: Date.now() } : c));
+      setDonorReplyText(prev => ({ ...prev, [convId]: '' }));
+      setExpandedDonorId(null);
+    } finally { setDonorReplying(null); }
+  };
+
   const [rulesCopied, setRulesCopied] = useState(false);
   const [rulesCopiedFirestore, setRulesCopiedFirestore] = useState(false);
   const [permsSaving, setPermsSaving] = useState(false);
@@ -260,7 +401,7 @@ const AdminPanel: React.FC = () => {
   const [purgeStatus, setPurgeStatus] = useState('');
   const [purgeError, setPurgeError] = useState('');
 
-  useEffect(() => { setGoalDraft(config.goal); }, [config.goal]);
+  useEffect(() => { setGoalsDraft(config.goals ?? []); }, [config.goals]);
   useEffect(() => { setMembershipDraft(config.membership); }, [config.membership]);
   useEffect(() => { setMembershipPageDraft(config.membershipPage); }, [config.membershipPage]);
   useEffect(() => { setDonatePageDraft(config.donatePage); }, [config.donatePage]);
@@ -315,7 +456,7 @@ const AdminPanel: React.FC = () => {
       setActiveTab(visiblePrimaryTabs[0] ?? 'roadmap');
       return;
     }
-    if (activeTab !== 'permissions' && !visiblePrimaryTabs.includes(activeTab as keyof AdminPermissions)) {
+    if (activeTab !== 'permissions' && activeTab !== 'orders' && !visiblePrimaryTabs.includes(activeTab as keyof AdminPermissions)) {
       setActiveTab(visiblePrimaryTabs[0] ?? 'roadmap');
     }
   }, [activeTab, isOwner, visiblePrimaryTabs]);
@@ -501,7 +642,7 @@ const AdminPanel: React.FC = () => {
                   {(['goal', 'membership', 'posts', 'donation'] as const).filter(tab => canAccessTab(tab)).map(tab => (
                     <button
                       key={tab}
-                      onClick={() => setActiveTab(tab)}
+                      onClick={() => { setActiveTab(tab); if (tab === 'donation') loadDonorConvos(); }}
                       className={`px-4 py-2 rounded-lg transition-colors font-medium capitalize ${activeTab === tab ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
                       {tab === 'goal' ? 'Goal Bar' : tab === 'membership' ? 'Membership' : tab === 'posts' ? 'Posts' : 'Donations'}
@@ -513,6 +654,17 @@ const AdminPanel: React.FC = () => {
                       className={`px-4 py-2 rounded-lg transition-colors font-medium flex items-center gap-1.5 ${activeTab === 'store' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
                       <ShoppingBag size={14} />Store
+                    </button>
+                  )}
+                  {isOwner && (
+                    <button
+                      onClick={() => { setActiveTab('orders'); loadAdminConvs(); loadContactMsgs(); }}
+                      className={`px-4 py-2 rounded-lg transition-colors font-medium flex items-center gap-1.5 ${activeTab === 'orders' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      <MessageSquare size={14} /> Orders & Messages
+                      {(adminConvs.reduce((s,c)=>s+c.unreadOwner,0) + contactMsgs.filter(m=>!m.read).length) > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">{adminConvs.reduce((s,c)=>s+c.unreadOwner,0) + contactMsgs.filter(m=>!m.read).length}</span>
+                      )}
                     </button>
                   )}
                   {isOwner && (
@@ -578,34 +730,177 @@ const AdminPanel: React.FC = () => {
                         )}
                       </div>
                       <div className="p-6 space-y-6">
+                        {/* Project meta: image, description, status */}
+                        <div className="grid grid-cols-1 gap-3 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div className="flex items-start gap-4">
+                            {project.imageUrl && (
+                              <img src={project.imageUrl} alt="" className="w-20 h-14 object-cover rounded flex-shrink-0 border border-white/10" />
+                            )}
+                            <div className="flex-1 space-y-2">
+                              <div>
+                                <label className="text-xs text-gray-500 mb-1 block">Cover image</label>
+                                <div className="flex gap-2 items-center">
+                                  <label className="cursor-pointer px-3 py-1.5 text-xs font-orbitron tracking-wider text-purple-400 border border-purple-500/40 hover:border-purple-400 transition-colors">
+                                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      setRoadmapUploadStatus(s => ({ ...s, [project.id]: 'Compressing…' }));
+                                      try {
+                                        const compressed = await compressImage(file);
+                                        setRoadmapUploadStatus(s => ({ ...s, [project.id]: 'Uploading…' }));
+                                        const result = await uploadAsset('roadmap', compressed, (snap) => {
+                                          const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+                                          setRoadmapUploadStatus(s => ({ ...s, [project.id]: `Uploading ${pct}%` }));
+                                        });
+                                        if (result?.url) {
+                                          updateProject(project.id, { imageUrl: result.url });
+                                          setRoadmapUploadStatus(s => ({ ...s, [project.id]: 'Done!' }));
+                                          setTimeout(() => setRoadmapUploadStatus(s => { const n = { ...s }; delete n[project.id]; return n; }), 2000);
+                                        }
+                                      } catch (err) {
+                                        setRoadmapUploadStatus(s => ({ ...s, [project.id]: 'Upload failed.' }));
+                                      }
+                                      e.currentTarget.value = '';
+                                    }} />
+                                    Upload Image
+                                  </label>
+                                  {project.imageUrl && (
+                                    <button className="text-xs text-red-400 hover:text-red-300" onClick={() => updateProject(project.id, { imageUrl: '' })}>Remove</button>
+                                  )}
+                                  {roadmapUploadStatus[project.id] && (
+                                    <span className="text-xs text-amber-300 font-mono">{roadmapUploadStatus[project.id]}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs text-gray-500 mb-1 block">Short description</label>
+                              <input
+                                value={project.description || ''}
+                                onChange={e => updateProject(project.id, { description: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500 text-sm"
+                                placeholder="e.g. A 2D platformer built in Unity"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-gray-500 mb-1 block">Status</label>
+                              <select
+                                value={project.status || 'active'}
+                                onChange={e => updateProject(project.id, { status: e.target.value as any })}
+                                className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500 text-sm"
+                              >
+                                <option value="active">Active</option>
+                                <option value="planned">Planned</option>
+                                <option value="completed">Completed</option>
+                                <option value="on-hold">On Hold</option>
+                              </select>
+                            </div>
+                            <div className="col-span-2">
+                              <label className="text-xs text-gray-500 mb-1 block">Icon</label>
+                              <div className="flex gap-2">
+                                {(['gamepad', 'sparkles', 'wrench', 'zap', 'code'] as const).map(icon => (
+                                  <button
+                                    key={icon}
+                                    onClick={() => updateProject(project.id, { iconType: icon })}
+                                    className="flex-1 flex flex-col items-center gap-1 py-2 rounded-lg text-xs transition-all"
+                                    style={{
+                                      background: project.iconType === icon ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.04)',
+                                      border: `1px solid ${project.iconType === icon ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.08)'}`,
+                                      color: project.iconType === icon ? '#d8b4fe' : '#6b7280',
+                                    }}
+                                    title={icon}
+                                  >
+                                    {icon === 'gamepad' && <Gamepad2 size={16} />}
+                                    {icon === 'sparkles' && <Sparkles size={16} />}
+                                    {icon === 'wrench' && <Wrench size={16} />}
+                                    {icon === 'zap' && <Zap size={16} />}
+                                    {icon === 'code' && <Code size={16} />}
+                                    <span className="capitalize">{icon}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
                         {project.sections.map((section, secIdx) => {
                           const sectionIds = project.sections.map(s => s.id);
                           return (
                             <div key={section.id} className="bg-white/5 rounded-xl p-4 border border-white/5">
                               <div className="flex justify-between items-center mb-4">
-                                <h4 className="font-bold text-gray-300 flex items-center gap-2 uppercase tracking-tighter text-sm">
-                                  <Layers size={14} className="text-blue-400" />{section.title}
-                                </h4>
-                                <div className="flex items-center gap-1">
-                                  <button onClick={() => reorderSections(project.id, moveInArray(sectionIds, section.id, 'up'))} disabled={secIdx === 0} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronUp size={14} /></button>
-                                  <button onClick={() => reorderSections(project.id, moveInArray(sectionIds, section.id, 'down'))} disabled={secIdx === project.sections.length - 1} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronDown size={14} /></button>
-                                  <button onClick={() => removeSection(project.id, section.id)} className="p-1.5 text-red-400 hover:text-red-300 ml-1"><Trash2 size={14} /></button>
-                                </div>
+                                {renamingSectionKey === `${project.id}-${section.id}` ? (
+                                  <form
+                                    className="flex-1 flex gap-2 mr-2"
+                                    onSubmit={(e) => { e.preventDefault(); if (renamingSectionValue.trim()) renameSection(project.id, section.id, renamingSectionValue.trim()); setRenamingSectionKey(null); }}
+                                  >
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={renamingSectionValue}
+                                      onChange={e => setRenamingSectionValue(e.target.value)}
+                                      onKeyDown={e => e.key === 'Escape' && setRenamingSectionKey(null)}
+                                      className="flex-1 px-2 py-1 rounded bg-black border border-blue-500/60 outline-none text-white text-sm font-bold"
+                                    />
+                                    <button type="submit" className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold">Save</button>
+                                    <button type="button" onClick={() => setRenamingSectionKey(null)} className="px-2 py-1 bg-neutral-700 text-white rounded text-xs">Cancel</button>
+                                  </form>
+                                ) : (
+                                  <h4
+                                    className="font-bold text-gray-300 flex items-center gap-2 uppercase tracking-tighter text-sm cursor-pointer group/sec"
+                                    onClick={() => { setRenamingSectionKey(`${project.id}-${section.id}`); setRenamingSectionValue(section.title); }}
+                                    title="Click to rename"
+                                  >
+                                    <Layers size={14} className="text-blue-400" />{section.title}
+                                    <Pencil size={11} className="text-gray-700 group-hover/sec:text-blue-400 transition-colors" />
+                                  </h4>
+                                )}
+                                {renamingSectionKey !== `${project.id}-${section.id}` && (
+                                  <div className="flex items-center gap-1">
+                                    <button onClick={() => reorderSections(project.id, moveInArray(sectionIds, section.id, 'up'))} disabled={secIdx === 0} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronUp size={14} /></button>
+                                    <button onClick={() => reorderSections(project.id, moveInArray(sectionIds, section.id, 'down'))} disabled={secIdx === project.sections.length - 1} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronDown size={14} /></button>
+                                    <button onClick={() => removeSection(project.id, section.id)} className="p-1.5 text-red-400 hover:text-red-300 ml-1"><Trash2 size={14} /></button>
+                                  </div>
+                                )}
                               </div>
                               <div className="space-y-2 mb-4">
                                 {section.steps.map((step, stepIdx) => {
                                   const stepIds = section.steps.map(s => s.id);
+                                  const stepKey = `${project.id}-${section.id}-${step.id}`;
                                   return (
                                     <div key={step.id} className="flex items-center gap-2 p-2 rounded bg-black/20 group">
                                       <button onClick={() => toggleStep(project.id, section.id, step.id)} className={`w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-all ${step.isCompleted ? 'bg-purple-500 border-purple-500' : 'border-gray-600'}`}>
                                         {step.isCompleted && <Check size={12} className="text-white" />}
                                       </button>
-                                      <span className={`flex-1 text-sm ${step.isCompleted ? 'text-gray-500 line-through' : 'text-gray-300'}`}>{step.text}</span>
-                                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => reorderSteps(project.id, section.id, moveInArray(stepIds, step.id, 'up'))} disabled={stepIdx === 0} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronUp size={12} /></button>
-                                        <button onClick={() => reorderSteps(project.id, section.id, moveInArray(stepIds, step.id, 'down'))} disabled={stepIdx === section.steps.length - 1} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronDown size={12} /></button>
-                                        <button onClick={() => removeStep(project.id, section.id, step.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded"><Trash2 size={14} /></button>
-                                      </div>
+                                      {editingStepKey === stepKey ? (
+                                        <form className="flex-1 flex gap-1" onSubmit={e => { e.preventDefault(); if (editingStepValue.trim()) renameStep(project.id, section.id, step.id, editingStepValue.trim()); setEditingStepKey(null); }}>
+                                          <input
+                                            autoFocus
+                                            type="text"
+                                            value={editingStepValue}
+                                            onChange={e => setEditingStepValue(e.target.value)}
+                                            onKeyDown={e => e.key === 'Escape' && setEditingStepKey(null)}
+                                            className="flex-1 px-2 py-0.5 rounded bg-black border border-purple-500/60 outline-none text-white text-sm"
+                                          />
+                                          <button type="submit" className="px-2 py-0.5 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold">Save</button>
+                                          <button type="button" onClick={() => setEditingStepKey(null)} className="px-2 py-0.5 bg-neutral-700 text-white rounded text-xs">✕</button>
+                                        </form>
+                                      ) : (
+                                        <span
+                                          className={`flex-1 text-sm cursor-pointer ${step.isCompleted ? 'text-gray-500 line-through' : 'text-gray-300'}`}
+                                          onDoubleClick={() => { setEditingStepKey(stepKey); setEditingStepValue(step.text); }}
+                                          title="Double-click to edit"
+                                        >{step.text}</span>
+                                      )}
+                                      {editingStepKey !== stepKey && (
+                                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <button onClick={() => { setEditingStepKey(stepKey); setEditingStepValue(step.text); }} className="p-1 text-gray-600 hover:text-purple-400 transition-colors"><Pencil size={11} /></button>
+                                          <button onClick={() => reorderSteps(project.id, section.id, moveInArray(stepIds, step.id, 'up'))} disabled={stepIdx === 0} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronUp size={12} /></button>
+                                          <button onClick={() => reorderSteps(project.id, section.id, moveInArray(stepIds, step.id, 'down'))} disabled={stepIdx === section.steps.length - 1} className="p-1 text-gray-500 hover:text-white disabled:opacity-20"><ChevronDown size={12} /></button>
+                                          <button onClick={() => removeStep(project.id, section.id, step.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded"><Trash2 size={14} /></button>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
@@ -853,119 +1148,170 @@ const AdminPanel: React.FC = () => {
 
             {/* ── GOAL BAR TAB ── */}
             {activeTab === 'goal' && (() => {
-              const g = goalDraft;
-              const setG = (patch: Partial<typeof g>) => setGoalDraft(prev => ({ ...prev, ...patch }));
+              const currencyMap: Record<string, string> = { GBP: '£', USD: '$', EUR: '€', AUD: 'A$', CAD: 'C$', JPY: '¥', CHF: 'Fr' };
+              const editingGoal = editingGoalId ? goalsDraft.find(g => g.id === editingGoalId) ?? null : null;
+              const setG = (patch: Partial<typeof goalsDraft[0]>) =>
+                setGoalsDraft(prev => prev.map(g => g.id === editingGoalId ? { ...g, ...patch } : g));
 
-              const saveGoalDraft = async () => {
+              const saveAll = async () => {
                 setGoalSaving(true);
-                await saveGoal(goalDraft);
+                await saveGoals(goalsDraft);
                 setGoalSaving(false);
+                setEditingGoalId(null);
+              };
+
+              const addGoal = () => {
+                const newGoal = {
+                  id: 'goal-' + Date.now(),
+                  title: 'New Goal',
+                  enabled: true,
+                  type: 'monthly' as const,
+                  currency: '£',
+                  currencyCode: 'GBP',
+                  target: 500,
+                  raised: 0,
+                  description: '',
+                  milestones: [],
+                };
+                setGoalsDraft(prev => [...prev, newGoal]);
+                setEditingGoalId(newGoal.id);
+              };
+
+              const deleteGoal = (id: string) => {
+                setGoalsDraft(prev => prev.filter(g => g.id !== id));
+                if (editingGoalId === id) setEditingGoalId(null);
               };
 
               const addMilestone = () => {
+                if (!editingGoal) return;
                 const amt = parseFloat(newMilestoneAmount);
                 if (!amt || !newMilestoneLabel.trim()) return;
-                const sorted = [...g.milestones, { amount: amt, label: newMilestoneLabel.trim() }]
+                const sorted = [...editingGoal.milestones, { amount: amt, label: newMilestoneLabel.trim() }]
                   .sort((a, b) => a.amount - b.amount);
                 setG({ milestones: sorted });
                 setNewMilestoneAmount('');
                 setNewMilestoneLabel('');
               };
 
-              const removeMilestone = (i: number) =>
-                setG({ milestones: g.milestones.filter((_, j) => j !== i) });
-
-              const pct = g.target > 0 ? Math.min(100, Math.round((g.raised / g.target) * 100)) : 0;
-
               return (
-                <div className="space-y-6 pb-12">
+                <div className="space-y-4 pb-12">
                   <div className="flex justify-between items-center">
-                    <p className="text-white font-bold">Goal Bar</p>
-                    <button onClick={saveGoalDraft} disabled={goalSaving} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors">
-                      <Save size={14} /> {goalSaving ? 'Saving…' : 'Save Changes'}
-                    </button>
-                  </div>
-
-                  {/* Live preview */}
-                  <div className="p-4 rounded-xl bg-black/30 border border-white/5">
-                    <div className="flex justify-between items-end mb-1 text-xs font-mono">
-                      <span className="text-white font-bold uppercase tracking-wider">{g.type === 'monthly' ? 'Monthly Goal' : 'Goal'}</span>
-                      <span style={{ color: '#00d4ff' }}>{g.currency}{g.raised.toLocaleString()} <span className="text-gray-500">/ {g.currency}{g.target.toLocaleString()}</span></span>
-                    </div>
-                    <div className="h-2 rounded-full bg-white/5 overflow-hidden mb-1">
-                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#00d4ff,#a855f7)' }} />
-                    </div>
-                    <p className="text-gray-600 text-xs text-right">{pct}% funded</p>
-                  </div>
-
-                  {/* Settings */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2 flex items-center gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input type="checkbox" checked={g.enabled} onChange={e => setG({ enabled: e.target.checked })} className="w-4 h-4 accent-purple-500" />
-                        <span className="text-gray-300 text-sm">Show goal bar on site</span>
-                      </label>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Type</label>
-                      <select value={g.type} onChange={e => setG({ type: e.target.value as any })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500">
-                        <option value="monthly">Monthly</option>
-                        <option value="one-time">One-time</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Currency</label>
-                      <select value={g.currencyCode} onChange={e => {
-                        const map: Record<string, string> = { GBP: '£', USD: '$', EUR: '€', AUD: 'A$', CAD: 'C$', JPY: '¥', CHF: 'Fr' };
-                        setG({ currencyCode: e.target.value, currency: map[e.target.value] || e.target.value });
-                      }} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500">
-                        <option value="GBP">GBP (£)</option>
-                        <option value="USD">USD ($)</option>
-                        <option value="EUR">EUR (€)</option>
-                        <option value="AUD">AUD (A$)</option>
-                        <option value="CAD">CAD (C$)</option>
-                        <option value="JPY">JPY (¥)</option>
-                        <option value="CHF">CHF (Fr)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Amount raised</label>
-                      <input type="number" min={0} value={g.raised} onChange={e => setG({ raised: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Target amount</label>
-                      <input type="number" min={1} value={g.target} onChange={e => setG({ target: parseFloat(e.target.value) || 1 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="text-xs text-gray-400 mb-1 block">Description</label>
-                      <input value={g.description} onChange={e => setG({ description: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="e.g. Help keep this going — every bit counts." />
-                    </div>
-                  </div>
-
-                  {/* Milestones */}
-                  <div>
-                    <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Milestones</p>
-                    <div className="space-y-2 mb-3">
-                      {g.milestones.map((m, i) => (
-                        <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/20 border border-white/5">
-                          <span className="text-white text-sm font-mono">{g.currency}{m.amount}</span>
-                          <span className="flex-1 text-gray-400 text-sm">— {m.label}</span>
-                          <button onClick={() => removeMilestone(i)} className="text-red-400 hover:text-red-300"><X size={14} /></button>
-                        </div>
-                      ))}
-                      {g.milestones.length === 0 && <p className="text-gray-600 text-sm">No milestones yet.</p>}
-                    </div>
+                    <p className="text-white font-bold">Goals ({goalsDraft.length})</p>
                     <div className="flex gap-2">
-                      <input type="number" value={newMilestoneAmount} onChange={e => setNewMilestoneAmount(e.target.value)} className="w-28 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Amount" />
-                      <input value={newMilestoneLabel} onChange={e => setNewMilestoneLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addMilestone()} className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Label (e.g. Hosting covered)" />
-                      <button onClick={addMilestone} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg"><Plus size={14} /></button>
+                      <button onClick={addGoal} className="flex items-center gap-1.5 px-3 py-2 bg-purple-600/80 hover:bg-purple-600 text-white rounded-lg text-sm font-bold transition-colors">
+                        <Plus size={14} /> Add Goal
+                      </button>
+                      <button onClick={saveAll} disabled={goalSaving} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors">
+                        <Save size={14} /> {goalSaving ? 'Saving…' : 'Save All'}
+                      </button>
                     </div>
                   </div>
+
+                  {/* Goal list */}
+                  {!editingGoalId && (
+                    <div className="space-y-2">
+                      {goalsDraft.length === 0 && <p className="text-gray-500 text-sm font-mono text-center py-8">No goals yet. Click Add Goal.</p>}
+                      {goalsDraft.map(g => {
+                        const pct = g.target > 0 ? Math.min(100, Math.round((g.raised / g.target) * 100)) : 0;
+                        return (
+                          <div key={g.id} className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <input type="checkbox" checked={g.enabled} onChange={e => { setGoalsDraft(prev => prev.map(x => x.id === g.id ? { ...x, enabled: e.target.checked } : x)); }} className="w-4 h-4 accent-purple-500 flex-shrink-0" />
+                                <span className="font-bold text-white text-sm truncate">{g.title}</span>
+                                <span className="text-xs font-mono text-gray-500 flex-shrink-0">{g.currency}{g.raised} / {g.currency}{g.target} · {pct}%</span>
+                              </div>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <button onClick={() => setEditingGoalId(g.id)} className="p-1.5 text-gray-500 hover:text-white transition-colors"><Pencil size={13} /></button>
+                                <button onClick={() => deleteGoal(g.id)} className="p-1.5 text-gray-600 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                              </div>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#00d4ff,#a855f7)' }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Goal editor */}
+                  {editingGoal && (
+                    <div className="space-y-4 p-4 rounded-xl bg-black/20 border border-purple-500/20">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold text-white">Editing: {editingGoal.title}</p>
+                        <button onClick={() => setEditingGoalId(null)} className="text-gray-500 hover:text-white"><X size={15} /></button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                          <label className="text-xs text-gray-400 mb-1 block">Goal title</label>
+                          <input value={editingGoal.title} onChange={e => setG({ title: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="e.g. Monthly Goal" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Type</label>
+                          <select value={editingGoal.type} onChange={e => setG({ type: e.target.value as 'monthly' | 'one-time' })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500">
+                            <option value="monthly">Monthly</option>
+                            <option value="one-time">One-time</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Currency</label>
+                          <select value={editingGoal.currencyCode} onChange={e => setG({ currencyCode: e.target.value, currency: currencyMap[e.target.value] || e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500">
+                            <option value="GBP">GBP (£)</option>
+                            <option value="USD">USD ($)</option>
+                            <option value="EUR">EUR (€)</option>
+                            <option value="AUD">AUD (A$)</option>
+                            <option value="CAD">CAD (C$)</option>
+                            <option value="JPY">JPY (¥)</option>
+                            <option value="CHF">CHF (Fr)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Amount raised</label>
+                          <input type="number" min={0} value={editingGoal.raised} onChange={e => setG({ raised: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Target amount</label>
+                          <input type="number" min={1} value={editingGoal.target} onChange={e => setG({ target: parseFloat(e.target.value) || 1 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-xs text-gray-400 mb-1 block">Description</label>
+                          <input value={editingGoal.description} onChange={e => setG({ description: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="e.g. Help keep this going" />
+                        </div>
+                        <div className="col-span-2 flex items-center gap-2">
+                          <input type="checkbox" checked={editingGoal.enabled} onChange={e => setG({ enabled: e.target.checked })} className="w-4 h-4 accent-purple-500" id="goal-enabled" />
+                          <label htmlFor="goal-enabled" className="text-gray-300 text-sm cursor-pointer">Show on site</label>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Milestones</p>
+                        <div className="space-y-2 mb-2">
+                          {editingGoal.milestones.map((m, i) => (
+                            <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/20 border border-white/5">
+                              <span className="text-white text-sm font-mono">{editingGoal.currency}{m.amount}</span>
+                              <span className="flex-1 text-gray-400 text-sm">— {m.label}</span>
+                              <button onClick={() => setG({ milestones: editingGoal.milestones.filter((_, j) => j !== i) })} className="text-red-400 hover:text-red-300"><X size={14} /></button>
+                            </div>
+                          ))}
+                          {editingGoal.milestones.length === 0 && <p className="text-gray-600 text-sm">No milestones yet.</p>}
+                        </div>
+                        <div className="flex gap-2">
+                          <input type="number" value={newMilestoneAmount} onChange={e => setNewMilestoneAmount(e.target.value)} className="w-28 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Amount" />
+                          <input value={newMilestoneLabel} onChange={e => setNewMilestoneLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addMilestone()} className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Label (e.g. Hosting covered)" />
+                          <button onClick={addMilestone} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg"><Plus size={14} /></button>
+                        </div>
+                      </div>
+                      <button onClick={saveAll} disabled={goalSaving} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors">
+                        <Save size={14} /> {goalSaving ? 'Saving…' : 'Save All Goals'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })()}
 
             {/* ── MEMBERSHIP TAB ── */}
+
             {activeTab === 'membership' && (() => {
               const tiers = membershipDraft.tiers;
 
@@ -1210,12 +1556,29 @@ const AdminPanel: React.FC = () => {
                       <div>
                         <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Pricing</p>
                         <div className="grid grid-cols-3 gap-3">
-                          {[['Monthly (' + config.goal.currency + ')', 'monthlyPrice'], ['Yearly (' + config.goal.currency + ')', 'yearlyPrice'], ['Lifetime (' + config.goal.currency + ')', 'lifetimePrice']].map(([label, key]) => (
+                          {[['Monthly (' + (config.goals?.[0]?.currency || '£') + ')', 'monthlyPrice'], ['Yearly (' + (config.goals?.[0]?.currency || '£') + ')', 'yearlyPrice'], ['Lifetime (' + (config.goals?.[0]?.currency || '£') + ')', 'lifetimePrice']].map(([label, key]) => (
                             <div key={key}>
                               <label className="text-xs text-gray-500 mb-1 block">{label}</label>
                               <input type="number" min={0} value={(d as any)[key]} onChange={e => set({ [key]: parseFloat(e.target.value) || 0 } as any)} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
                             </div>
                           ))}
+                        </div>
+                      </div>
+
+                      {/* Store discount */}
+                      <div>
+                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Store Discount</p>
+                        <div className="flex items-center gap-3">
+                          <div>
+                            <label className="text-xs text-gray-500 mb-1 block">% off all store products <span className="text-gray-600">(0 = no discount)</span></label>
+                            <input type="number" min={0} max={99} step={1}
+                              value={d.storeDiscountPercent ?? 0}
+                              onChange={e => set({ storeDiscountPercent: Math.min(99, Math.max(0, parseInt(e.target.value) || 0)) })}
+                              className="w-32 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
+                          </div>
+                          {(d.storeDiscountPercent ?? 0) > 0 && (
+                            <p className="text-xs text-purple-400 mt-5">Members on this tier get {d.storeDiscountPercent}% off at checkout</p>
+                          )}
                         </div>
                       </div>
 
@@ -1563,6 +1926,78 @@ const AdminPanel: React.FC = () => {
 
               return (
                 <div className="space-y-6 pb-12">
+                  {/* Donor Messages */}
+                  <div className="bg-black/30 rounded-xl border border-white/5 p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-white font-bold">Donor Messages</p>
+                      <button onClick={loadDonorConvos} className="font-mono text-xs text-gray-500 hover:text-cyan-400 transition-colors">↻ Refresh</button>
+                    </div>
+                    {donorConvosLoading ? (
+                      <p className="font-mono text-xs text-gray-600 text-center py-6">Loading…</p>
+                    ) : donorConvos.length === 0 ? (
+                      <p className="font-mono text-xs text-gray-600 text-center py-6">No donations yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {donorConvos.map(conv => {
+                          const isExpanded = expandedDonorId === conv.id;
+                          return (
+                            <div key={conv.id} className="rounded-xl border border-white/8 bg-black/20 overflow-hidden">
+                              {/* Donor summary row */}
+                              <div className="flex items-center gap-3 p-3">
+                                <div className="w-9 h-9 rounded-full bg-cyan-500/15 flex items-center justify-center flex-shrink-0 text-base">
+                                  {conv.donorName?.[0]?.toUpperCase() || '?'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-white text-sm font-bold truncate">{conv.donorName || 'Anonymous'}</span>
+                                    <span className="text-cyan-400 text-xs font-mono font-bold">£{Number(conv.amountGBP || 0).toFixed(2)}</span>
+                                    {conv.replied && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-mono">replied</span>}
+                                  </div>
+                                  {conv.donorEmail && <p className="text-xs text-gray-500 truncate">{conv.donorEmail}</p>}
+                                  <p className="text-[11px] text-gray-600">{new Date(conv.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                </div>
+                                {conv.message && (
+                                  <button
+                                    onClick={() => setExpandedDonorId(isExpanded ? null : conv.id)}
+                                    className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-xs font-bold transition-colors"
+                                  >
+                                    {isExpanded ? 'Close' : 'Reply'}
+                                  </button>
+                                )}
+                              </div>
+                              {/* Message + reply area */}
+                              {isExpanded && (
+                                <div className="border-t border-white/5 p-3 space-y-3">
+                                  {conv.message && (
+                                    <div className="rounded-lg bg-white/5 border border-white/8 px-3 py-2 text-sm text-gray-300 italic">
+                                      "{conv.message}"
+                                    </div>
+                                  )}
+                                  <div className="space-y-2">
+                                    <textarea
+                                      value={donorReplyText[conv.id] || ''}
+                                      onChange={e => setDonorReplyText(prev => ({ ...prev, [conv.id]: e.target.value }))}
+                                      rows={3}
+                                      placeholder="Write a reply… (will be emailed to the donor)"
+                                      className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-sm focus:border-cyan-500 resize-none placeholder-gray-600"
+                                    />
+                                    <button
+                                      onClick={() => sendDonorReply(conv.id)}
+                                      disabled={donorReplying === conv.id || !donorReplyText[conv.id]?.trim()}
+                                      className="flex items-center gap-1.5 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors"
+                                    >
+                                      <Send size={13} /> {donorReplying === conv.id ? 'Sending…' : 'Send Reply'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Donate page header editor */}
                   <div className="bg-black/30 rounded-xl border border-white/5 p-4">
                     <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Donate Page Header</p>
@@ -1786,216 +2221,478 @@ const AdminPanel: React.FC = () => {
                   </button>
                 </div>
 
+                {/* Discounts */}
+                <div className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-3">
+                  <p className="text-xs text-gray-400 uppercase tracking-wider">Discounts</p>
+                  <p className="text-xs text-gray-400">Membership discounts are set per tier in the <span className="text-purple-400">Membership</span> tab — each tier can have its own store discount %. The best discount across all of a buyer's active tiers is applied at checkout.</p>
+                  <p className="text-xs text-gray-500 mt-1">Coupon codes: create them in <span className="text-cyan-500">Stripe Dashboard → Coupons</span>. Buyers can enter them on the Stripe checkout page automatically.</p>
+                  <button onClick={() => saveStore(storeData)} className="px-4 py-2 rounded-lg font-orbitron text-xs font-bold tracking-widest uppercase transition-all" style={{ background: 'rgba(0,212,255,0.15)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff' }}>
+                    <Save size={12} className="inline mr-1.5" />Save Discount Settings
+                  </button>
+                </div>
+
                 {/* Product editor or list */}
                 {editingProduct ? (
-                  <div className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <p className="font-orbitron font-bold text-sm text-white">{editingProduct.id.startsWith('prod-new') ? 'New Product' : 'Edit Product'}</p>
-                      <button onClick={() => { setEditingProduct(null); setStoreUploadError(''); setStoreUploadSuccess(''); setStoreUploadStatus(''); }} className="text-gray-500 hover:text-white"><X size={16} /></button>
+                  <div className="space-y-3">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div>
+                        <p className="font-orbitron font-bold text-base text-white">{editingProduct.id.startsWith('prod-new') ? '+ New Product' : 'Edit Product'}</p>
+                        {!editingProduct.id.startsWith('prod-new') && <p className="font-mono text-xs text-gray-600 mt-0.5">{editingProduct.id}</p>}
+                      </div>
+                      <button onClick={() => { setEditingProduct(null); setStoreUploadError(''); setStoreUploadSuccess(''); setStoreUploadStatus(''); }} className="text-gray-500 hover:text-white p-1"><X size={16} /></button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="col-span-2">
-                        <label className="text-xs text-gray-400 mb-1 block">Product Name</label>
-                        <input value={editingProduct.name} onChange={e => setP({ name: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500" placeholder="e.g. Mecha Overdrive Art Pack" />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="text-xs text-gray-400 mb-1 block">Description</label>
-                        <textarea value={editingProduct.description} onChange={e => setP({ description: e.target.value })} rows={2} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 resize-none" placeholder="Short product description" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Price ({config.goal.currency})</label>
-                        <input type="number" min={0} step={0.01} value={editingProduct.price} onChange={e => setP({ price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Compare-at Price (0 = no sale)</label>
-                        <input type="number" min={0} step={0.01} value={editingProduct.compareAtPrice} onChange={e => setP({ compareAtPrice: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Type</label>
-                        <select value={editingProduct.type} onChange={e => setP({ type: e.target.value as 'digital' | 'physical' })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500">
-                          <option value="digital">Digital</option>
-                          <option value="physical">Physical</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Category</label>
-                        <select value={editingProduct.category} onChange={e => setP({ category: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500">
-                          <option value="">— None —</option>
-                          {storeData.categories.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <div className="col-span-2 rounded-xl border border-white/10 bg-black/20 p-3">
-                        <p className="text-xs text-gray-400 uppercase tracking-wider">Stripe Checkout</p>
-                        <p className="text-sm text-gray-200 mt-2">Store purchases now use dynamic Stripe Checkout Sessions.</p>
-                        <p className="text-xs text-gray-500 mt-1">This product will be sold in the buyer&apos;s selected currency, so there is no product-level Stripe Payment Link to paste anymore.</p>
-                      </div>
-                      {editingProduct.type === 'digital' && (
-                        <div className="col-span-2">
-                          <label className="text-xs text-gray-400 mb-1 block">Digital Product File</label>
-                          <label className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-sm transition-colors w-fit">
-                            <input type="file" className="hidden" onChange={async e => {
-                              const file = e.target.files?.[0];
-                              setStoreUploadStatus(file ? `Selected digital file: ${file.name}` : 'No file was selected from the picker.');
-                              if (!file) return;
-                              setStoreUploadError('');
-                              setStoreUploadSuccess('');
-                              setStoreUploadStatus(`Authenticating with Firebase Storage... ${file.name}`);
-                              try {
-                                const { url, path } = await uploadAsset(
-                                  `store/${editingProduct.id}/digital`,
-                                  file,
-                                  (snapshot) => {
-                                    setStoreUploadStatus(`Uploading digital file: ${file.name} (${formatUploadProgress(snapshot.bytesTransferred, snapshot.totalBytes)})`);
-                                  },
-                                  (status) => setStoreUploadStatus(`${status} ${file.name}`.trim())
-                                );
-                                setP({ digitalFileUrl: url, digitalFilePath: path, digitalFileName: file.name });
-                                setStoreUploadSuccess(`Digital file uploaded: ${file.name}`);
-                                setStoreUploadStatus('Digital file upload completed.');
-                              } catch (error) {
-                                console.error('Digital product upload failed:', error);
-                                setStoreUploadError(getErrorMessage(error, 'Digital product file upload failed. Check Firebase Storage rules and bucket settings.'));
-                                setStoreUploadStatus('Digital file upload failed.');
-                              } finally {
-                                e.currentTarget.value = '';
-                              }
-                            }} />
-                            Upload Digital File
-                          </label>
-                          {editingProduct.digitalFileName && (
-                            <p className="text-xs text-cyan-300 mt-2">
-                              Uploaded file: {editingProduct.digitalFileName}
-                            </p>
-                          )}
-                          {editingProduct.digitalFileUrl && (
-                            <a href={editingProduct.digitalFileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex mt-2 text-xs text-cyan-400 hover:text-cyan-300 underline">
-                              Test Download File
-                            </a>
-                          )}
-                          {storeUploadStatus && <p className="text-xs text-amber-300 mt-2">{storeUploadStatus}</p>}
-                          {storeUploadSuccess && <p className="text-xs text-emerald-400 mt-2">{storeUploadSuccess}</p>}
-                          {storeUploadError && <p className="text-red-400 text-xs mt-2">{storeUploadError}</p>}
-                          <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 space-y-2">
-                            <p className="text-xs text-gray-400 uppercase tracking-wider">Digital Delivery</p>
-                            <p className="text-xs text-gray-500">Successful purchases are verified server-side and sent to the built-in download page automatically. You no longer need to paste a manual Stripe redirect URL for digital products.</p>
-                          </div>
-                        </div>
-                      )}
-                      <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Stock (leave blank = unlimited)</label>
-                        <input type="number" min={0} value={editingProduct.stock ?? ''} onChange={e => setP({ stock: e.target.value === '' ? null : parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500" placeholder="∞" />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Cover Image</label>
-                        <label className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-sm transition-colors w-fit">
-                          <input type="file" accept="image/*" className="hidden" onChange={async e => {
-                            const file = e.target.files?.[0];
-                            setStoreUploadStatus(file ? `Selected cover image: ${file.name}` : 'No file was selected from the picker.');
-                            if (!file) return;
-                              setStoreUploadError('');
-                              setStoreUploadSuccess('');
-                              setStoreUploadStatus(`Compressing image... ${file.name}`);
-                              const fileToUpload = await compressImage(file);
-                              setStoreUploadStatus(`Authenticating with Firebase Storage... ${fileToUpload.name}`);
-                              try {
-                                const { url, path } = await uploadAsset(
-                                  `store/${editingProduct.id}/cover`,
-                                  fileToUpload,
-                                  (snapshot) => {
-                                    setStoreUploadStatus(`Uploading cover image: ${file.name} (${formatUploadProgress(snapshot.bytesTransferred, snapshot.totalBytes)})`);
-                                  },
-                                  (status) => setStoreUploadStatus(`${status} ${file.name}`.trim())
-                                );
-                                setP({ coverImage: url });
-                                setStoreUploadSuccess(`Cover image uploaded: ${file.name}`);
-                                setStoreUploadStatus('Cover image upload completed.');
-                            } catch (error) {
-                              console.error('Store image upload failed:', error);
-                              setStoreUploadError(getErrorMessage(error, 'Store image upload failed. Check Firebase Storage rules and bucket settings.'));
-                              setStoreUploadStatus('Cover image upload failed.');
-                            } finally {
-                              e.currentTarget.value = '';
-                            }
-                          }} />
-                          Upload Cover Image
-                        </label>
-                        {storeUploadError && <p className="text-red-400 text-xs mt-2">{storeUploadError}</p>}
-                        {storeUploadStatus && <p className="text-xs text-amber-300 mt-2">{storeUploadStatus}</p>}
-                        {storeUploadSuccess && <p className="text-xs text-emerald-400 mt-2">{storeUploadSuccess}</p>}
-                        {editingProduct.coverImage && <p className="text-xs text-cyan-300 mt-2">Cover image uploaded.</p>}
-                        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
-                          <div className="flex items-center justify-between gap-3 mb-2">
-                            <p className="text-[11px] uppercase tracking-wider text-gray-400">Firebase Rules</p>
-                            <button onClick={copyStorageRules} className="px-2 py-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/20 transition-colors">
-                              {rulesCopied ? 'Copied!' : 'Copy Both'}
-                            </button>
-                          </div>
-                          <p className="text-xs text-gray-500 mb-1">Enable Anonymous auth, then set these in Firebase Console:</p>
-                          <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-2 mb-1">Storage Rules</p>
-                          <pre className="overflow-x-auto rounded-lg bg-black/40 p-3 text-[11px] leading-relaxed text-cyan-300 whitespace-pre-wrap">{STORAGE_RULES_SNIPPET}</pre>
-                          <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-3 mb-1">Firestore Rules</p>
-                          <pre className="overflow-x-auto rounded-lg bg-black/40 p-3 text-[11px] leading-relaxed text-purple-300 whitespace-pre-wrap">{FIRESTORE_RULES_SNIPPET}</pre>
-                        </div>
-                        {editingProduct.coverImage && <img src={editingProduct.coverImage} className="mt-2 h-16 w-24 object-cover rounded" alt="" />}
-                      </div>
-                      <div className="col-span-2 flex gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input type="checkbox" checked={editingProduct.enabled} onChange={e => setP({ enabled: e.target.checked })} className="w-4 h-4 accent-cyan-500" />
-                          <span className="text-gray-300 text-sm">Enabled</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                          <input type="checkbox" checked={editingProduct.featured} onChange={e => setP({ featured: e.target.checked })} className="w-4 h-4 accent-yellow-500" />
-                          <span className="text-gray-300 text-sm">Featured (shows on homepage)</span>
-                        </label>
-                      </div>
-                      <div className="col-span-2">
-                        <label className="text-xs text-gray-400 mb-1 block">Tags (comma separated)</label>
-                        <input value={editingProduct.tags.join(', ')} onChange={e => setP({ tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 font-mono text-xs" placeholder="game-asset, art, download" />
-                      </div>
-                    </div>
-
-                    {/* Country restrictions for physical products */}
-                    {editingProduct.type === 'physical' && (
-                      <div>
-                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Blocked Countries (physical shipping)</p>
-                        <p className="text-xs text-gray-600 mb-3">Customers in these countries will see "Not available in your region".</p>
-                        <div className="flex flex-wrap gap-1.5 mb-3">
-                          {editingProduct.blockedCountries.map(code => {
-                            const c = COUNTRIES.find(x => x.code === code);
-                            return (
-                              <span key={code} className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono" style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
-                                {c?.name || code}
-                                <button onClick={() => setP({ blockedCountries: editingProduct.blockedCountries.filter(x => x !== code) })} className="hover:text-white"><X size={10} /></button>
-                              </span>
-                            );
-                          })}
-                        </div>
-                        <div className="relative">
-                          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
-                          <input
-                            value={countrySearch}
-                            onChange={e => setCountrySearch(e.target.value)}
-                            placeholder="Search country to block..."
-                            className="w-full pl-8 pr-4 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-red-500/50 text-xs font-mono"
-                          />
-                        </div>
-                        {countrySearch && (
-                          <div className="mt-1 max-h-36 overflow-y-auto rounded-lg border border-white/10 bg-black/80">
-                            {COUNTRIES.filter(c =>
-                              (c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.toLowerCase().includes(countrySearch.toLowerCase()))
-                              && !editingProduct.blockedCountries.includes(c.code)
-                            ).slice(0, 10).map(c => (
-                              <button key={c.code} onClick={() => { setP({ blockedCountries: [...editingProduct.blockedCountries, c.code] }); setCountrySearch(''); }}
-                                className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/5 font-mono flex items-center justify-between">
-                                <span>{c.name}</span><span className="text-gray-600">{c.code}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                    {/* Upload status bar */}
+                    {(storeUploadStatus || storeUploadError || storeUploadSuccess) && (
+                      <div className="px-3 py-2 rounded-lg font-mono text-xs" style={{ background: storeUploadError ? 'rgba(239,68,68,0.1)' : storeUploadSuccess ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)', border: `1px solid ${storeUploadError ? 'rgba(239,68,68,0.3)' : storeUploadSuccess ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`, color: storeUploadError ? '#f87171' : storeUploadSuccess ? '#4ade80' : '#fbbf24' }}>
+                        {storeUploadError || storeUploadSuccess || storeUploadStatus}
                       </div>
                     )}
 
+                    {/* ── SECTION 1: BASICS ── */}
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,212,255,0.2)' }}>
+                      <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(0,212,255,0.08)', borderBottom: '1px solid rgba(0,212,255,0.15)' }}>
+                        <span className="font-orbitron font-black text-xs" style={{ color: '#00d4ff' }}>01</span>
+                        <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Basics</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">Name · Description · Category · Status</p>
+                      </div>
+                      <div className="p-4 space-y-3" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Product Name</label>
+                          <input value={editingProduct.name} onChange={e => setP({ name: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 text-sm" placeholder="e.g. Mecha Overdrive Art Pack" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Description</label>
+                          <textarea value={editingProduct.description} onChange={e => setP({ description: e.target.value })} rows={2} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 resize-none text-sm" placeholder="Short product description" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-gray-400 mb-1 block">Type</label>
+                            <select value={editingProduct.type} onChange={e => setP({ type: e.target.value as 'digital' | 'physical' })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 text-sm">
+                              <option value="digital">Digital</option>
+                              <option value="physical">Physical</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-400 mb-1 block">Category</label>
+                            <select value={editingProduct.category} onChange={e => setP({ category: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 text-sm">
+                              <option value="">— None —</option>
+                              {storeData.categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Tags <span className="text-gray-600">(comma separated)</span></label>
+                          <input value={editingProduct.tags.join(', ')} onChange={e => setP({ tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 font-mono text-xs" placeholder="game-asset, art, download" />
+                        </div>
+                        <div className="flex gap-6 pt-1">
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" checked={editingProduct.enabled} onChange={e => setP({ enabled: e.target.checked })} className="w-4 h-4 accent-cyan-500" />
+                            <span className="text-sm text-gray-300">Enabled</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" checked={editingProduct.featured} onChange={e => setP({ featured: e.target.checked })} className="w-4 h-4 accent-yellow-500" />
+                            <span className="text-sm text-gray-300">Featured <span className="text-gray-600 text-xs">(shown on homepage)</span></span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── SECTION 2: PRICING ── */}
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(251,191,36,0.25)' }}>
+                      <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(251,191,36,0.08)', borderBottom: '1px solid rgba(251,191,36,0.15)' }}>
+                        <span className="font-orbitron font-black text-xs" style={{ color: '#fbbf24' }}>02</span>
+                        <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Pricing</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">Price · Sale · Stock</p>
+                      </div>
+                      <div className="p-4 grid grid-cols-3 gap-3" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Price ({(config.goals?.[0]?.currency || '£')})</label>
+                          <input type="number" min={0} step={0.01} value={editingProduct.price} onChange={e => setP({ price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-yellow-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Sale % off <span className="text-gray-600">(0 = no sale)</span></label>
+                          <input type="number" min={0} max={99} step={1} value={editingProduct.salePercent ?? 0} onChange={e => setP({ salePercent: Math.min(99, Math.max(0, parseInt(e.target.value) || 0)) })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-yellow-500 text-sm" placeholder="e.g. 20 for 20% off" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block">Stock <span className="text-gray-600">(blank = ∞)</span></label>
+                          <input type="number" min={0} value={editingProduct.stock ?? ''} onChange={e => setP({ stock: e.target.value === '' ? null : parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-yellow-500 text-sm" placeholder="∞" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── SECTION 3: IMAGES ── */}
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(168,85,247,0.25)' }}>
+                      <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(168,85,247,0.08)', borderBottom: '1px solid rgba(168,85,247,0.15)' }}>
+                        <span className="font-orbitron font-black text-xs" style={{ color: '#a855f7' }}>03</span>
+                        <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Images</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">Cover photo + all angles</p>
+                      </div>
+                      <div className="p-4 space-y-4" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                        {/* Cover */}
+                        <div>
+                          <p className="text-xs text-gray-400 mb-2 font-orbitron tracking-wider">COVER IMAGE <span className="text-gray-600 font-mono normal-case tracking-normal">(main product photo)</span></p>
+                          <div className="flex items-start gap-3">
+                            <label className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-xs transition-colors shrink-0">
+                              <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                                const file = e.target.files?.[0]; if (!file) return;
+                                setStoreUploadError(''); setStoreUploadSuccess('');
+                                setStoreUploadStatus(`Compressing ${file.name}...`);
+                                try {
+                                  const compressed = await compressImage(file);
+                                  const { url } = await uploadAsset(`store/${editingProduct.id}/cover`, compressed,
+                                    (snap) => setStoreUploadStatus(`Uploading cover: ${formatUploadProgress(snap.bytesTransferred, snap.totalBytes)}`),
+                                    (s) => setStoreUploadStatus(s)
+                                  );
+                                  setP({ coverImage: url });
+                                  setStoreUploadSuccess('Cover image uploaded.');
+                                } catch (err) { setStoreUploadError(getErrorMessage(err, 'Cover upload failed.')); }
+                                finally { e.currentTarget.value = ''; }
+                              }} />
+                              Upload Cover
+                            </label>
+                            {editingProduct.coverImage && <img src={editingProduct.coverImage} className="h-16 w-20 object-cover rounded-lg border border-white/10" alt="cover" />}
+                          </div>
+                        </div>
+                        {/* Gallery */}
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
+                          <p className="text-xs text-gray-400 mb-2 font-orbitron tracking-wider">GALLERY <span className="text-gray-600 font-mono normal-case tracking-normal">(extra angles — select multiple files at once)</span></p>
+                          <label className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-xs transition-colors w-fit mb-3">
+                            <input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
+                              const files = Array.from(e.target.files || []); if (!files.length) return;
+                              setStoreUploadError(''); setStoreUploadSuccess('');
+                              for (const file of files) {
+                                try {
+                                  setStoreUploadStatus(`Compressing ${file.name}...`);
+                                  const compressed = await compressImage(file);
+                                  const { url } = await uploadAsset(`store/${editingProduct.id}/gallery`, compressed,
+                                    (snap) => setStoreUploadStatus(`Uploading ${file.name}: ${formatUploadProgress(snap.bytesTransferred, snap.totalBytes)}`),
+                                    (s) => setStoreUploadStatus(s)
+                                  );
+                                  setP({ galleryImages: [...(editingProduct.galleryImages || []), url] });
+                                } catch (err) { setStoreUploadError(getErrorMessage(err, 'Gallery upload failed.')); }
+                              }
+                              setStoreUploadSuccess('Gallery images uploaded.');
+                              e.currentTarget.value = '';
+                            }} />
+                            Upload Gallery Images
+                          </label>
+                          {(editingProduct.galleryImages || []).length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {editingProduct.galleryImages!.map((img, idx) => (
+                                <div key={img} className="relative group">
+                                  <img src={img} className="h-16 w-16 object-cover rounded-lg border border-white/10" alt={`${idx + 1}`} />
+                                  <span className="absolute bottom-0 left-0 right-0 text-center font-mono text-[9px] text-gray-400 bg-black/60 rounded-b-lg">{idx + 1}</span>
+                                  <button onClick={() => setP({ galleryImages: editingProduct.galleryImages!.filter((_, j) => j !== idx) })}
+                                    className="absolute -top-1.5 -right-1.5 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"><X size={10} /></button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="font-mono text-xs text-gray-700">No gallery images yet.</p>
+                          )}
+                        </div>
+                        {/* Firebase rules tip */}
+                        <div className="rounded-lg border border-white/8 bg-black/20 p-3">
+                          <div className="flex items-center justify-between gap-3 mb-1">
+                            <p className="text-[11px] uppercase tracking-wider text-gray-500">Firebase Rules needed for uploads</p>
+                            <button onClick={copyStorageRules} className="px-2 py-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/20 transition-colors">{rulesCopied ? 'Copied!' : 'Copy Both'}</button>
+                          </div>
+                          <pre className="overflow-x-auto rounded bg-black/40 p-2 text-[10px] leading-relaxed text-cyan-300 whitespace-pre-wrap">{STORAGE_RULES_SNIPPET}</pre>
+                          <pre className="overflow-x-auto rounded bg-black/40 p-2 text-[10px] leading-relaxed text-purple-300 whitespace-pre-wrap mt-2">{FIRESTORE_RULES_SNIPPET}</pre>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── SECTION 4: COLOURS ── */}
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(236,72,153,0.25)' }}>
+                      <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(236,72,153,0.08)', borderBottom: '1px solid rgba(236,72,153,0.15)' }}>
+                        <span className="font-orbitron font-black text-xs" style={{ color: '#ec4899' }}>04</span>
+                        <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Colours</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">Link each colour to a gallery photo</p>
+                      </div>
+                      <div className="p-4 space-y-2" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                        {(editingProduct.colorOptions || []).length === 0 && (
+                          <p className="font-mono text-xs text-gray-600">No colours added. Click + Add Colour below.</p>
+                        )}
+                        {(editingProduct.colorOptions || []).map((color, ci) => {
+                          const allImages = [editingProduct.coverImage, ...(editingProduct.galleryImages || [])].filter(Boolean);
+                          return (
+                            <div key={color.id} className="rounded-lg p-3 space-y-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              <div className="flex items-center gap-2">
+                                <span className="w-7 h-7 rounded-full flex-shrink-0 border-2 border-white/20" style={{ backgroundColor: color.hex }} />
+                                <input value={color.label}
+                                  onChange={e => setP({ colorOptions: editingProduct.colorOptions!.map((c,i) => i===ci ? {...c, label: e.target.value} : c) })}
+                                  placeholder="Colour name (e.g. Crimson Red)"
+                                  className="flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-white text-sm outline-none focus:border-pink-500" />
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <label className="text-xs text-gray-600 font-mono">hex</label>
+                                  <input type="color" value={color.hex}
+                                    onChange={e => setP({ colorOptions: editingProduct.colorOptions!.map((c,i) => i===ci ? {...c, hex: e.target.value} : c) })}
+                                    className="w-9 h-9 rounded-lg cursor-pointer border border-white/20 outline-none p-0.5 bg-transparent" title="Pick colour" />
+                                </div>
+                                <button onClick={() => setP({ colorOptions: editingProduct.colorOptions!.filter((_,i) => i !== ci) })}
+                                  className="text-gray-600 hover:text-red-400 shrink-0 p-1"><X size={14} /></button>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs text-gray-600 font-mono shrink-0">→ shows image:</p>
+                                <select value={color.imageUrl || ''}
+                                  onChange={e => setP({ colorOptions: editingProduct.colorOptions!.map((c,i) => i===ci ? {...c, imageUrl: e.target.value || undefined} : c) })}
+                                  className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-black/50 border border-white/10 text-gray-300 text-xs outline-none focus:border-pink-500">
+                                  <option value="">None (use cover)</option>
+                                  {allImages.map((img, idx) => (
+                                    <option key={img} value={img}>Image {idx + 1}{idx === 0 ? ' — Cover' : ''}</option>
+                                  ))}
+                                </select>
+                                {color.imageUrl && <img src={color.imageUrl} className="h-8 w-8 object-cover rounded-lg shrink-0 border border-white/10" alt="" />}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <button onClick={() => setP({ colorOptions: [...(editingProduct.colorOptions || []), { id: `col-${Date.now()}`, label: '', hex: '#ffffff' }] })}
+                          className="flex items-center gap-1.5 text-xs font-mono transition-colors mt-1" style={{ color: '#ec4899' }}>
+                          <Plus size={12} /> Add Colour
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ── SECTION 5: VARIANTS ── */}
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(245,158,11,0.25)' }}>
+                      <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.15)' }}>
+                        <span className="font-orbitron font-black text-xs" style={{ color: '#f59e0b' }}>05</span>
+                        <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Variants</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">Type options · Size options</p>
+                      </div>
+                      <div className="p-4 grid grid-cols-2 gap-3" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block font-orbitron tracking-wider">TYPE OPTIONS <span className="text-gray-600 font-mono normal-case tracking-normal text-[10px]">comma separated, leave blank to hide</span></label>
+                          <input value={(editingProduct.typeOptions || []).join(', ')}
+                            onChange={e => setP({ typeOptions: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                            placeholder="e.g. Refill, With Spool"
+                            className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-amber-500 font-mono text-xs" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400 mb-1 block font-orbitron tracking-wider">SIZE OPTIONS <span className="text-gray-600 font-mono normal-case tracking-normal text-[10px]">comma separated, leave blank to hide</span></label>
+                          <input value={(editingProduct.sizeOptions || []).join(', ')}
+                            onChange={e => setP({ sizeOptions: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                            placeholder="e.g. Small, Medium, Large"
+                            className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-amber-500 font-mono text-xs" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── SECTION 6: PERSONALIZATION ── */}
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(34,197,94,0.25)' }}>
+                      <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(34,197,94,0.08)', borderBottom: '1px solid rgba(34,197,94,0.15)' }}>
+                        <span className="font-orbitron font-black text-xs" style={{ color: '#22c55e' }}>06</span>
+                        <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Personalization</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">Custom questions for the buyer</p>
+                      </div>
+                      <div className="p-4 space-y-2" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                        <p className="font-mono text-xs text-gray-600 mb-3">Ask buyers questions before checkout — e.g. "What name should we print?" or "Pick a style".</p>
+                        {(editingProduct.customFields || []).map((field, fi) => (
+                          <div key={field.id} className="rounded-lg p-3 space-y-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                            <div className="flex items-center gap-2">
+                              <input value={field.label} onChange={e => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, label: e.target.value} : f) })}
+                                placeholder="Question text (e.g. What is your name?)"
+                                className="flex-1 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-sm font-mono focus:border-green-500" />
+                              <select value={field.type} onChange={e => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, type: e.target.value as 'text'|'select'|'color-picker', options: e.target.value==='text'||e.target.value==='color-picker' ? undefined : f.options} : f) })}
+                                className="px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-xs focus:border-green-500">
+                                <option value="text">Text input</option>
+                                <option value="select">Dropdown</option>
+                                <option value="color-picker">Colour picker</option>
+                              </select>
+                              <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer shrink-0">
+                                <input type="checkbox" checked={field.required} onChange={e => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, required: e.target.checked} : f) })} className="accent-green-500" />
+                                Required
+                              </label>
+                              <button onClick={() => setP({ customFields: (editingProduct.customFields||[]).filter((_,i) => i!==fi) })} className="text-gray-600 hover:text-red-400 p-1"><X size={14} /></button>
+                            </div>
+                            {field.type === 'select' && (
+                              <input value={(field.options||[]).join(', ')} onChange={e => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, options: e.target.value.split(',').map(o=>o.trim()).filter(Boolean)} : f) })}
+                                placeholder="Dropdown options (comma separated, e.g. Matte, Glossy, Satin)"
+                                className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-xs font-mono focus:border-green-500" />
+                            )}
+                            {field.type === 'color-picker' && (
+                              <div className="space-y-2">
+                                <p className="text-xs text-gray-500 font-mono">Your available colours — buyers will click a swatch to choose:</p>
+                                {(field.colorSwatches||[]).map((swatch, si) => (
+                                  <div key={si} className="flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-full flex-shrink-0 border border-white/20" style={{ backgroundColor: swatch.hex }} />
+                                    <input value={swatch.name} onChange={e => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, colorSwatches: (f.colorSwatches||[]).map((s,j) => j===si ? {...s, name: e.target.value} : s)} : f) })}
+                                      placeholder="Colour name (e.g. Cherry Red)"
+                                      className="flex-1 px-2 py-1 rounded-lg bg-black/50 border border-white/10 text-white text-xs font-mono outline-none focus:border-green-500" />
+                                    <input type="color" value={swatch.hex} onChange={e => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, colorSwatches: (f.colorSwatches||[]).map((s,j) => j===si ? {...s, hex: e.target.value} : s)} : f) })}
+                                      className="w-8 h-8 rounded-lg cursor-pointer border border-white/20 bg-transparent p-0.5 flex-shrink-0" />
+                                    <button onClick={() => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, colorSwatches: (f.colorSwatches||[]).filter((_,j) => j!==si)} : f) })}
+                                      className="text-gray-600 hover:text-red-400 flex-shrink-0"><X size={12} /></button>
+                                  </div>
+                                ))}
+                                <button onClick={() => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, colorSwatches: [...(f.colorSwatches||[]), { name: '', hex: '#ffffff' }]} : f) })}
+                                  className="text-xs font-mono text-green-400 hover:text-green-300 flex items-center gap-1">
+                                  <Plus size={10} /> Add Colour
+                                </button>
+                              </div>
+                            )}
+                            {field.type !== 'color-picker' && (
+                              <input value={field.placeholder||''} onChange={e => setP({ customFields: (editingProduct.customFields||[]).map((f,i) => i===fi ? {...f, placeholder: e.target.value} : f) })}
+                                placeholder="Placeholder hint for buyer (optional)"
+                                className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 outline-none text-gray-400 text-xs font-mono focus:border-green-500" />
+                            )}
+                          </div>
+                        ))}
+                        <button onClick={() => setP({ customFields: [...(editingProduct.customFields||[]), { id: `cf-${Date.now()}`, label: '', type: 'text', required: false, placeholder: '' }] })}
+                          className="flex items-center gap-1.5 text-xs font-mono transition-colors" style={{ color: '#22c55e' }}>
+                          <Plus size={12} /> Add Question
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ── SECTION 7: DELIVERY ── */}
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(99,102,241,0.25)' }}>
+                      <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(99,102,241,0.08)', borderBottom: '1px solid rgba(99,102,241,0.15)' }}>
+                        <span className="font-orbitron font-black text-xs" style={{ color: '#818cf8' }}>07</span>
+                        <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Delivery</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">{editingProduct.type === 'digital' ? 'Digital file upload' : 'Shipping restrictions'}</p>
+                      </div>
+                      <div className="p-4 space-y-3" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                        {editingProduct.type === 'digital' ? (
+                          <>
+                            <div className="rounded-lg p-3 font-mono text-xs text-gray-500 space-y-1" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)' }}>
+                              <p className="text-indigo-300 font-bold">How digital delivery works</p>
+                              <p>Upload your file below. After a successful Stripe purchase, the buyer is automatically redirected to a secure download page — no manual steps needed.</p>
+                            </div>
+                            <label className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-sm transition-colors w-fit">
+                              <input type="file" className="hidden" onChange={async e => {
+                                const file = e.target.files?.[0]; if (!file) return;
+                                setStoreUploadError(''); setStoreUploadSuccess('');
+                                setStoreUploadStatus(`Uploading ${file.name}...`);
+                                try {
+                                  const { url, path } = await uploadAsset(`store/${editingProduct.id}/digital`, file,
+                                    (snap) => setStoreUploadStatus(`Uploading ${file.name}: ${formatUploadProgress(snap.bytesTransferred, snap.totalBytes)}`),
+                                    (s) => setStoreUploadStatus(`${s} ${file.name}`.trim())
+                                  );
+                                  setP({ digitalFileUrl: url, digitalFilePath: path, digitalFileName: file.name });
+                                  setStoreUploadSuccess(`File uploaded: ${file.name}`);
+                                } catch (err) {
+                                  setStoreUploadError(getErrorMessage(err, 'Digital file upload failed.'));
+                                } finally { e.currentTarget.value = ''; }
+                              }} />
+                              Upload Digital File
+                            </label>
+                            {editingProduct.digitalFileName && (
+                              <div className="flex items-center gap-3">
+                                <p className="font-mono text-xs text-cyan-300">📎 {editingProduct.digitalFileName}</p>
+                                {editingProduct.digitalFileUrl && (
+                                  <a href={editingProduct.digitalFileUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-indigo-400 hover:text-indigo-300 underline">Test Download</a>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <button
+                                onClick={() => setP({ shippingCountryMode: 'all-except-blocked' })}
+                                className="rounded-lg px-3 py-2 text-left transition-colors"
+                                style={editingProduct.shippingCountryMode !== 'only-selected'
+                                  ? { background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5' }
+                                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#9ca3af' }}
+                              >
+                                <p className="font-orbitron text-xs font-bold tracking-widest uppercase">Block Selected Countries</p>
+                                <p className="mt-1 font-mono text-[11px]">Ship worldwide except the countries you add below.</p>
+                              </button>
+                              <button
+                                onClick={() => setP({ shippingCountryMode: 'only-selected' })}
+                                className="rounded-lg px-3 py-2 text-left transition-colors"
+                                style={editingProduct.shippingCountryMode === 'only-selected'
+                                  ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', color: '#86efac' }
+                                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#9ca3af' }}
+                              >
+                                <p className="font-orbitron text-xs font-bold tracking-widest uppercase">Only Ship To Selected Countries</p>
+                                <p className="mt-1 font-mono text-[11px]">Pick the countries you do ship to instead of blocking them one by one.</p>
+                              </button>
+                            </div>
+                            <p className="font-mono text-xs text-gray-500">
+                              {editingProduct.shippingCountryMode === 'only-selected'
+                                ? 'Customers outside your selected shipping countries will see "Not available in your region" and cannot purchase.'
+                                : 'Customers in blocked countries will see "Not available in your region" and cannot purchase.'}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {(editingProduct.shippingCountryMode === 'only-selected'
+                                ? (editingProduct.allowedCountries || [])
+                                : editingProduct.blockedCountries
+                              ).map(code => {
+                                const c = COUNTRIES.find(x => x.code === code);
+                                return (
+                                  <span
+                                    key={code}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono"
+                                    style={editingProduct.shippingCountryMode === 'only-selected'
+                                      ? { background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80' }
+                                      : { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}
+                                  >
+                                    {c?.name || code}
+                                    <button
+                                      onClick={() => setP(editingProduct.shippingCountryMode === 'only-selected'
+                                        ? { allowedCountries: (editingProduct.allowedCountries || []).filter(x => x !== code) }
+                                        : { blockedCountries: editingProduct.blockedCountries.filter(x => x !== code) })}
+                                      className="hover:text-white"
+                                    >
+                                      <X size={10} />
+                                    </button>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] font-mono text-gray-600">
+                              <span>
+                                {editingProduct.shippingCountryMode === 'only-selected'
+                                  ? `${(editingProduct.allowedCountries || []).length} shipping countr${(editingProduct.allowedCountries || []).length === 1 ? 'y' : 'ies'} selected`
+                                  : `${editingProduct.blockedCountries.length} blocked countr${editingProduct.blockedCountries.length === 1 ? 'y' : 'ies'}`}
+                              </span>
+                              <button
+                                onClick={() => setP(editingProduct.shippingCountryMode === 'only-selected'
+                                  ? { allowedCountries: [] }
+                                  : { blockedCountries: [] })}
+                                className="transition-colors hover:text-white"
+                              >
+                                Clear List
+                              </button>
+                            </div>
+                            <div className="relative">
+                              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
+                              <input value={countrySearch} onChange={e => setCountrySearch(e.target.value)} placeholder={editingProduct.shippingCountryMode === 'only-selected' ? 'Search country to allow...' : 'Search country to block...'}
+                                className="w-full pl-8 pr-4 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-red-500/50 text-xs font-mono" />
+                            </div>
+                            {countrySearch && (
+                              <div className="max-h-36 overflow-y-auto rounded-lg border border-white/10 bg-black/80">
+                                {COUNTRIES.filter(c => {
+                                  const matches = c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.toLowerCase().includes(countrySearch.toLowerCase());
+                                  const selected = editingProduct.shippingCountryMode === 'only-selected'
+                                    ? (editingProduct.allowedCountries || []).includes(c.code)
+                                    : editingProduct.blockedCountries.includes(c.code);
+                                  return matches && !selected;
+                                }).slice(0, 10).map(c => (
+                                  <button key={c.code} onClick={() => {
+                                    setP(editingProduct.shippingCountryMode === 'only-selected'
+                                      ? { allowedCountries: [...(editingProduct.allowedCountries || []), c.code] }
+                                      : { blockedCountries: [...editingProduct.blockedCountries, c.code] });
+                                    setCountrySearch('');
+                                  }}
+                                    className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/5 font-mono flex items-center justify-between">
+                                    <span>{c.name}</span><span className="text-gray-600">{c.code}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Save / Cancel */}
                     <div className="flex gap-3 pt-2">
                       <button
                         onClick={() => {
@@ -2007,16 +2704,17 @@ const AdminPanel: React.FC = () => {
                           setStoreData(updated);
                           saveStore(updated);
                           setEditingProduct(null);
-                          setStoreUploadError('');
-                          setStoreUploadSuccess('');
-                          setStoreUploadStatus('');
+                          setStoreUploadError(''); setStoreUploadSuccess(''); setStoreUploadStatus('');
                         }}
-                        className="flex-1 py-2.5 font-orbitron font-bold text-xs tracking-widest uppercase transition-all"
-                        style={{ background: 'rgba(0,212,255,0.15)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff' }}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-[1.02]"
+                        style={{ background: 'rgba(0,212,255,0.15)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}
                       >
-                        <Save size={12} className="inline mr-1.5" />Save Product
+                        <Save size={13} /> Save Product
                       </button>
-                      <button onClick={() => { setEditingProduct(null); setStoreUploadError(''); setStoreUploadSuccess(''); setStoreUploadStatus(''); }} className="px-4 py-2.5 font-orbitron text-xs text-gray-500 border border-white/10 hover:border-white/20">Cancel</button>
+                      <button onClick={() => { setEditingProduct(null); setStoreUploadError(''); setStoreUploadSuccess(''); setStoreUploadStatus(''); }}
+                        className="px-5 py-3 font-orbitron text-xs text-gray-500 border border-white/10 hover:border-white/20 hover:text-white transition-colors">
+                        Cancel
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -2041,10 +2739,14 @@ const AdminPanel: React.FC = () => {
                           <p className="font-bold text-sm text-white truncate">{product.name || 'Unnamed Product'}</p>
                           <div className="flex items-center gap-2 text-xs font-mono">
                             <span style={{ color: product.type === 'digital' ? '#a855f7' : '#00d4ff' }}>{product.type}</span>
-                            <span className="text-gray-600">{config.goal.currency}{product.price}</span>
+                            <span className="text-gray-600">{(config.goals?.[0]?.currency || '£')}{product.price}</span>
                             {!product.enabled && <span className="text-red-500">hidden</span>}
                             {product.featured && <span className="text-yellow-500">★ featured</span>}
-                            {product.type === 'physical' && product.blockedCountries.length > 0 && <span className="text-orange-500">{product.blockedCountries.length} blocked</span>}
+                            {product.type === 'physical' && (
+                              product.shippingCountryMode === 'only-selected'
+                                ? ((product.allowedCountries?.length || 0) > 0 && <span className="text-green-400">{product.allowedCountries?.length} allowed</span>)
+                                : (product.blockedCountries.length > 0 && <span className="text-orange-500">{product.blockedCountries.length} blocked</span>)
+                            )}
                           </div>
                         </div>
                         <button onClick={() => { setEditingProduct(product); setStoreUploadError(''); setStoreUploadSuccess(''); setStoreUploadStatus(''); }} className="p-1.5 text-gray-500 hover:text-white transition-colors"><Pencil size={14} /></button>
@@ -2055,6 +2757,131 @@ const AdminPanel: React.FC = () => {
                         }} className="p-1.5 text-gray-600 hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── ORDERS & MESSAGES TAB ── */}
+            {activeTab === 'orders' && isOwner && (
+              <div className="h-[620px] flex flex-col gap-0" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.3)' }}>
+                  <div className="flex gap-1">
+                    <button onClick={() => setOrdersSubTab('orders')} className={`font-orbitron font-bold text-xs px-3 py-1.5 transition-colors ${ordersSubTab==='orders' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>Order Msgs</button>
+                    <button onClick={() => { setOrdersSubTab('contact'); if(contactMsgs.length===0) loadContactMsgs(); }} className={`font-orbitron font-bold text-xs px-3 py-1.5 transition-colors flex items-center gap-1.5 ${ordersSubTab==='contact' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>
+                      Fan Messages
+                      {contactMsgs.filter(m=>!m.read).length > 0 && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{contactMsgs.filter(m=>!m.read).length}</span>}
+                    </button>
+                  </div>
+                  <button onClick={() => ordersSubTab==='orders' ? loadAdminConvs() : loadContactMsgs()} className="font-mono text-xs text-gray-500 hover:text-cyan-400 transition-colors">↻ Refresh</button>
+                </div>
+                {ordersSubTab === 'orders' && (
+                <div className="flex flex-1 min-h-0 overflow-hidden">
+                  {/* Conversation list */}
+                  <div className="w-64 flex-shrink-0 overflow-y-auto" style={{ borderRight: '1px solid rgba(255,255,255,0.07)' }}>
+                    {adminConvsLoading ? (
+                      <p className="font-mono text-xs text-gray-600 text-center py-8">Loading...</p>
+                    ) : adminConvs.length === 0 ? (
+                      <p className="font-mono text-xs text-gray-600 text-center py-8">No conversations yet.</p>
+                    ) : adminConvs.map(conv => (
+                      <button key={conv.id} onClick={() => openAdminConv(conv)}
+                        className="w-full text-left p-3 transition-colors hover:bg-white/5"
+                        style={{ background: adminActiveConv?.id === conv.id ? 'rgba(0,212,255,0.08)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div className="flex items-start justify-between gap-1 mb-0.5">
+                          <p className="font-orbitron font-bold text-xs text-white truncate">{conv.buyerName || conv.buyerEmail || 'Buyer'}</p>
+                          {conv.unreadOwner > 0 && (
+                            <span className="flex-shrink-0 w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center" style={{ background: '#ef4444', color: '#fff' }}>{conv.unreadOwner}</span>
+                          )}
+                        </div>
+                        <p className="font-mono text-[10px] text-gray-500 truncate">{conv.productNames?.[0] || 'Order'}</p>
+                        <p className="font-mono text-[10px] text-gray-700 truncate mt-0.5">{conv.lastMessage || 'No messages'}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {/* Thread */}
+                  {adminActiveConv ? (
+                    <div className="flex-1 flex flex-col min-w-0">
+                      <div className="px-4 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.2)' }}>
+                        <p className="font-orbitron font-bold text-xs text-white">{adminActiveConv.buyerName || adminActiveConv.buyerEmail}</p>
+                        <p className="font-mono text-[10px] text-gray-600 mt-0.5">{adminActiveConv.productNames?.[0]} · Order #{adminActiveConv.orderId.slice(-8)}</p>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                        {adminMessages.map(m => (
+                          <div key={m.id} className={`flex ${m.senderRole === 'owner' ? 'justify-end' : 'justify-start'}`}>
+                            <div className="max-w-[75%]">
+                              <p className="font-mono text-[10px] mb-1" style={{ color: m.senderRole === 'owner' ? '#a855f7' : '#00d4ff', textAlign: m.senderRole === 'owner' ? 'right' : 'left' }}>{m.senderName}</p>
+                              <div className="px-3 py-2 font-mono text-xs leading-relaxed"
+                                style={m.senderRole === 'owner'
+                                  ? { background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', color: '#e5e7eb' }
+                                  : { background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.2)', color: '#e5e7eb' }}>
+                                {m.text}
+                              </div>
+                              <p className="font-mono text-[10px] text-gray-700 mt-0.5" style={{ textAlign: m.senderRole === 'owner' ? 'right' : 'left' }}>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="p-2 flex gap-2 flex-shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+                        <input value={adminReply} onChange={e => setAdminReply(e.target.value)} onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendAdminReply()}
+                          placeholder="Reply as WahajPlayz..." className="flex-1 px-3 py-1.5 bg-black/40 border border-white/10 text-white font-mono text-xs outline-none focus:border-cyan-500/50" />
+                        <button onClick={sendAdminReply} disabled={!adminReply.trim() || adminSending}
+                          className="px-3 py-1.5 flex items-center gap-1.5 font-orbitron font-bold text-xs tracking-wider transition-all hover:scale-105 disabled:opacity-40"
+                          style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.4)', color: '#a855f7' }}>
+                          <Send size={11} /> {adminSending ? '...' : 'Send'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center">
+                      <p className="font-mono text-xs text-gray-600">Select a conversation</p>
+                    </div>
+                  )}
+                </div>
+                )}
+
+                {/* ── Fan Messages sub-tab ── */}
+                {ordersSubTab === 'contact' && (
+                  <div className="flex flex-1 min-h-0">
+                    {/* Contact list */}
+                    <div className="w-64 flex-shrink-0 overflow-y-auto" style={{ borderRight: '1px solid rgba(255,255,255,0.07)' }}>
+                      {contactLoading ? (
+                        <p className="font-mono text-xs text-gray-600 text-center py-8">Loading...</p>
+                      ) : contactMsgs.length === 0 ? (
+                        <p className="font-mono text-xs text-gray-600 text-center py-8">No fan messages yet.</p>
+                      ) : contactMsgs.map(msg => (
+                        <button key={msg.id} onClick={() => { setActiveContactMsg(msg); markContactRead(msg); }}
+                          className="w-full text-left p-3 transition-colors hover:bg-white/5"
+                          style={{ background: activeContactMsg?.id === msg.id ? 'rgba(168,85,247,0.08)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <div className="flex items-start justify-between gap-1 mb-0.5">
+                            <p className="font-orbitron font-bold text-xs text-white truncate">{msg.name}</p>
+                            {!msg.read && <span className="flex-shrink-0 w-2 h-2 rounded-full mt-1" style={{ background: '#a855f7' }} />}
+                          </div>
+                          <p className="font-mono text-[10px] text-gray-500 truncate">{msg.subject || msg.message}</p>
+                          <p className="font-mono text-[10px] text-gray-700 mt-0.5">{new Date(msg.createdAt).toLocaleDateString()}</p>
+                        </button>
+                      ))}
+                    </div>
+                    {/* Contact detail */}
+                    {activeContactMsg ? (
+                      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto p-4 space-y-3">
+                        <div className="pb-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                          <p className="font-orbitron font-bold text-sm text-white mb-0.5">{activeContactMsg.name}</p>
+                          <a href={`mailto:${activeContactMsg.email}`} className="font-mono text-xs hover:text-cyan-400 transition-colors" style={{ color: '#00d4ff' }}>{activeContactMsg.email}</a>
+                          {activeContactMsg.subject && <p className="font-mono text-xs text-gray-400 mt-1">Re: {activeContactMsg.subject}</p>}
+                          <p className="font-mono text-[10px] text-gray-700 mt-1">{new Date(activeContactMsg.createdAt).toLocaleString()}</p>
+                        </div>
+                        <p className="font-mono text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">{activeContactMsg.message}</p>
+                        <a href={`mailto:${activeContactMsg.email}?subject=Re: ${encodeURIComponent(activeContactMsg.subject || 'Your message')}`}
+                          className="inline-flex items-center gap-2 font-orbitron font-bold text-xs tracking-widest uppercase px-4 py-2 transition-all hover:scale-105 self-start"
+                          style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', color: '#a855f7' }}>
+                          <Send size={11} /> Reply via Email
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center">
+                        <p className="font-mono text-xs text-gray-600">Select a message</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

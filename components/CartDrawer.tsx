@@ -1,11 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useCurrency } from '@/context/CurrencyContext';
 
 const CartDrawer: React.FC = () => {
-  const { items, subtotal, isOpen, closeCart, updateQuantity, removeItem, checkout, checkoutLoading, checkoutError } = useCart();
+  const { items, subtotal, isOpen, closeCart, updateQuantity, removeItem, checkout, checkoutLoading, checkoutError, authLoading } = useCart();
   const { formatPrice } = useCurrency();
+
+  useEffect(() => {
+    const supportButton = document.getElementById('custom-support-btn');
+    if (!supportButton) return;
+
+    supportButton.style.display = isOpen ? 'none' : '';
+
+    return () => {
+      supportButton.style.display = '';
+    };
+  }, [isOpen]);
 
   return (
     <>
@@ -87,10 +98,10 @@ const CartDrawer: React.FC = () => {
             </button>
             <button
               onClick={() => { void checkout(); }}
-              disabled={items.length === 0 || checkoutLoading}
+              disabled={items.length === 0 || checkoutLoading || authLoading}
               className="w-full rounded-full bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {checkoutLoading ? 'Opening Checkout...' : 'Go to Checkout'}
+              {checkoutLoading ? 'Opening Checkout...' : authLoading ? 'Preparing Sign-In...' : 'Go to Checkout'}
             </button>
           </div>
         </div>

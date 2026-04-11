@@ -1,7 +1,7 @@
 import admin from 'firebase-admin';
 import { applyCors, handleOptions } from '../_lib/cors.js';
 import { getAdminApp, getDb } from '../_lib/admin.js';
-import { getStripe } from '../_lib/stripe.js';
+import { getStripe, convertToBaseCurrency } from '../_lib/stripe.js';
 import { readRawBody, sendError } from '../_lib/http.js';
 import { getStoreProduct, recordTransaction, grantDigitalPurchase } from '../_lib/data.js';
 
@@ -35,16 +35,79 @@ export default async function handler(req, res) {
     const stripe = getStripe();
     const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
 
+    console.log('[webhook] event received:', event.type);
+
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       const kind = session.metadata?.kind;
       const uid = session.metadata?.uid || session.client_reference_id || '';
 
+      console.log('[webhook] checkout.session.completed kind:', kind, 'session:', session.id);
+
       if (kind === 'donation') {
+        const donorName = session.customer_details?.name || 'Anonymous';
+        const donorEmail = session.customer_details?.email || null;
+        const donationMessage = session.metadata?.message || '';
+        console.log('[webhook] processing donation from:', donorName, 'amount:', session.amount_total, session.currency, 'message:', donationMessage || '(none)');
+
         await recordTransaction(session, {
           kind: 'donation',
-          message: session.metadata?.message || '',
+          message: donationMessage,
         });
+
+        const amountGBP = await convertToBaseCurrency(session.amount_total || 0, session.currency || 'GBP');
+
+        // Create donation conversation record
+        await getDb().collection('donation_conversations').doc(session.id).set({
+          transactionId: session.id,
+          donorName,
+          donorEmail,
+          amountGBP,
+          amountOriginal: session.amount_total || 0,
+          currencyOriginal: (session.currency || 'GBP').toUpperCase(),
+          message: donationMessage,
+          createdAt: Date.now(),
+          replied: false,
+          lastReplyAt: null,
+        });
+
+        // Increment the first enabled goal's raised amount
+        const supportSnap = await getDb().doc('wahaj_data/support').get();
+        const supportData = supportSnap.exists ? supportSnap.data() : null;
+        let goals;
+        if (Array.isArray(supportData?.goals) && supportData.goals.length > 0) {
+          goals = [...supportData.goals];
+        } else if (supportData?.goal) {
+          // Migrate legacy single-goal field to array format
+          goals = [{ id: 'goal-default', title: 'Goal', ...supportData.goal }];
+        } else if (!supportSnap.exists) {
+          // Document doesn't exist yet — create with a default enabled goal
+          goals = [{
+            id: 'goal-default',
+            title: 'Monthly Goal',
+            enabled: true,
+            type: 'monthly',
+            currency: '£',
+            currencyCode: 'GBP',
+            target: 500,
+            raised: 0,
+            description: 'Help keep this going.',
+            milestones: [],
+          }];
+        } else {
+          goals = [];
+        }
+        const goalIdx = goals.findIndex(g => g.enabled);
+        console.log('[webhook] goals found:', goals.length, 'enabled goal index:', goalIdx);
+        if (goalIdx !== -1) {
+          const prevRaised = goals[goalIdx].raised || 0;
+          goals[goalIdx] = { ...goals[goalIdx], raised: prevRaised + amountGBP };
+          console.log('[webhook] updating goal raised:', prevRaised, '->', goals[goalIdx].raised);
+          await getDb().doc('wahaj_data/support').set({ goals }, { merge: true });
+          console.log('[webhook] goal updated in Firestore');
+        } else {
+          console.log('[webhook] no enabled goal found — skipping goal update');
+        }
       }
 
       if (kind === 'store') {

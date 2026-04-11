@@ -22,6 +22,7 @@ import { StoreProvider } from './context/StoreContext';
 import { CartProvider } from './context/CartContext';
 import { stashDiscordOAuthHash } from './lib/discord';
 import CartDrawer from './components/CartDrawer';
+import ContactModal from './components/ContactModal';
 
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
 const MemberPanel = lazy(() => import('./components/MemberPanel'));
@@ -33,6 +34,8 @@ const DownloadPage = lazy(() => import('./pages/Download'));
 const ProfilePage = lazy(() => import('./pages/Profile'));
 const MembershipPage = lazy(() => import('./pages/Membership'));
 const DonatePage = lazy(() => import('./pages/Donate'));
+const DonationSuccessPage = lazy(() => import('./pages/DonationSuccess'));
+const MessagesPage = lazy(() => import('./pages/Messages'));
 
 // Konami code: ↑↑↓↓←→←→ba — secret owner panel access
 const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
@@ -83,6 +86,7 @@ const AppInner: React.FC = () => {
         {isAuthModalOpen && <AuthModal />}
       </Suspense>
       <DiscordLink />
+      <ContactModal />
     </div>
   );
 };
@@ -110,9 +114,11 @@ const App: React.FC = () => (
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/membership" element={<MembershipPage />} />
                     <Route path="/donate" element={<DonatePage />} />
+                    <Route path="/donate/success" element={<DonationSuccessPage />} />
                     <Route path="/store" element={<StorePage />} />
                     <Route path="/store/:productId" element={<StoreProductDetailPage />} />
                     <Route path="/download" element={<DownloadPage />} />
+                    <Route path="/messages" element={<MessagesPage />} />
                   </Routes>
                   <CartDrawer />
                 </Suspense>

@@ -8,9 +8,9 @@ import { startMembershipCheckout } from '@/lib/stripeCheckout';
 type Billing = 'monthly' | 'yearly' | 'lifetime';
 
 const MembershipTiers: React.FC = () => {
-  const { config } = useSupportData();
-  const baseCurrency = config.goal.currencyCode || 'GBP';
-  const { user, openAuthModal } = useAuth();
+  const { config, loading } = useSupportData();
+  const baseCurrency = (config.goals?.[0]?.currencyCode || 'GBP') || 'GBP';
+  const { user, authLoading, openAuthModal } = useAuth();
   const { formatPrice, currency } = useCurrency();
   const { membership } = config;
   const [billing, setBilling] = useState<Billing>('monthly');
@@ -37,7 +37,7 @@ const MembershipTiers: React.FC = () => {
     setCheckoutError('');
     setStartingTierId(tier.id);
     try {
-      await startMembershipCheckout(tier.id, billing, currency.code);
+      await startMembershipCheckout(tier.id, billing, currency.code, user);
     } catch (error) {
       const nextError = error instanceof Error ? error.message : 'Failed to start Stripe Checkout.';
       setCheckoutError(nextError);
@@ -46,6 +46,11 @@ const MembershipTiers: React.FC = () => {
   };
 
   const handleSelect = (tier: typeof membership.tiers[0]) => {
+    if (authLoading) {
+      setCheckoutError('Sign-in is still loading. Please wait a moment and try again.');
+      return;
+    }
+
     if (!user) {
       openAuthModal(() => launchCheckout(tier));
       return;
@@ -58,6 +63,12 @@ const MembershipTiers: React.FC = () => {
     : membership.tiers.length === 2
     ? 'grid md:grid-cols-2 max-w-3xl mx-auto gap-6'
     : 'grid md:grid-cols-3 gap-6';
+
+  if (loading) return (
+    <div id="membership" className="mb-16 flex justify-center py-20">
+      <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+    </div>
+  );
 
   return (
     <div id="membership" className="mb-16">
@@ -141,9 +152,15 @@ const MembershipTiers: React.FC = () => {
                   </li>
                 ))}
               </ul>
+              {(tier.storeDiscountPercent ?? 0) > 0 && (
+                <div className="mb-4 px-3 py-2 font-mono text-xs flex items-center gap-2" style={{ background: `${accent}12`, border: `1px solid ${accent}30`, color: accent }}>
+                  <span style={{ fontSize: 13 }}>🏷️</span>
+                  <span><strong>{tier.storeDiscountPercent}% off</strong> all store products for subscribers</span>
+                </div>
+              )}
               <button
                 onClick={() => handleSelect(tier)}
-                disabled={isStarting}
+                disabled={isStarting || authLoading}
                 className="w-full py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   background: `${accent}20`,
@@ -152,7 +169,7 @@ const MembershipTiers: React.FC = () => {
                   clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)',
                 }}
               >
-                {isStarting ? 'Opening Checkout' : `Get ${tier.name}`}
+                {isStarting ? 'Opening Checkout' : authLoading ? 'Preparing Sign-In' : `Get ${tier.name}`}
               </button>
             </div>
           );

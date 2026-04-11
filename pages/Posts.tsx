@@ -145,9 +145,10 @@ const PostsPage: React.FC = () => {
             <button onClick={() => setModal(null)} className="absolute top-4 right-4 text-gray-600 hover:text-white">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
+            {modal.coverImage && <img src={modal.coverImage} alt={modal.title} className="w-full rounded mb-6 object-cover max-h-64" />}
             <p className="text-gray-600 text-xs font-mono mb-2">{new Date(modal.publishedAt).toLocaleDateString()}</p>
             <h2 className="font-orbitron font-bold text-2xl mb-6 text-white">{modal.title}</h2>
-            <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{modal.content}</div>
+            <div className="text-gray-300 text-sm leading-relaxed prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: modal.content }} />
           </div>
         </div>
       )}

@@ -24,6 +24,7 @@ export const recordTransaction = async (session, extra = {}) => {
     amountTotal: session.amount_total || 0,
     currency: session.currency?.toUpperCase() || '',
     customerEmail: session.customer_details?.email || null,
+    customerName: session.customer_details?.name || null,
     createdAt: Date.now(),
     ...extra,
   }, { merge: true });

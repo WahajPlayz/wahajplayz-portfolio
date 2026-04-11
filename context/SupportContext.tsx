@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, ensureStorageAuth } from '../lib/firebase';
-import { ownerConfig, OwnerConfig, AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
+import { ownerConfig, OwnerConfig, GoalItem, AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
 
 interface SupportContextType {
   config: OwnerConfig;
-  saveGoal: (goal: OwnerConfig['goal']) => Promise<void>;
+  saveGoals: (goals: GoalItem[]) => Promise<void>;
   saveMembership: (m: OwnerConfig['membership']) => Promise<void>;
   saveDonation: (d: OwnerConfig['donation']) => Promise<void>;
   savePosts: (posts: OwnerConfig['posts']) => Promise<void>;
@@ -17,7 +17,13 @@ interface SupportContextType {
 const SupportContext = createContext<SupportContextType | undefined>(undefined);
 const DOC = () => doc(db, 'wahaj_data', 'support');
 const mergeConfig = (data?: Partial<OwnerConfig>): OwnerConfig => ({
-  goal: data?.goal ?? ownerConfig.goal,
+  goals: (() => {
+    if (data?.goals?.length) return data.goals;
+    // Migrate legacy single goal
+    const legacy = (data as any)?.goal;
+    if (legacy) return [{ id: 'goal-default', title: legacy.type === 'monthly' ? 'Monthly Goal' : 'Goal', ...legacy }];
+    return ownerConfig.goals;
+  })(),
   membership: data?.membership ?? ownerConfig.membership,
   donation: data?.donation ?? ownerConfig.donation,
   posts: data?.posts ?? ownerConfig.posts,
@@ -31,9 +37,10 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(DOC(), (snap) => {
+    const unsubscribe = onSnapshot(DOC(), { includeMetadataChanges: true }, (snap) => {
       setConfig(snap.exists() ? mergeConfig(snap.data() as Partial<OwnerConfig>) : ownerConfig);
-      setLoading(false);
+      // Only mark loading done once we have server-confirmed data (not stale cache)
+      if (!snap.metadata.fromCache) setLoading(false);
     }, (error) => {
       console.error('SupportContext load failed, using defaults:', error);
       setLoading(false);
@@ -42,10 +49,10 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return unsubscribe;
   }, []);
 
-  const saveGoal = async (goal: OwnerConfig['goal']) => {
+  const saveGoals = async (goals: GoalItem[]) => {
     await ensureStorageAuth();
-    setConfig((current) => ({ ...current, goal }));
-    await setDoc(DOC(), { goal }, { merge: true });
+    setConfig((current) => ({ ...current, goals }));
+    await setDoc(DOC(), { goals }, { merge: true });
   };
 
   const saveMembership = async (membership: OwnerConfig['membership']) => {
@@ -79,7 +86,7 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   return (
-    <SupportContext.Provider value={{ config, saveGoal, saveMembership, saveDonation, savePosts, savePageContent, saveAdminPermissions, loading }}>
+    <SupportContext.Provider value={{ config, saveGoals, saveMembership, saveDonation, savePosts, savePageContent, saveAdminPermissions, loading }}>
       {children}
     </SupportContext.Provider>
   );

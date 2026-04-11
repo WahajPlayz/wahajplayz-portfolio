@@ -18,7 +18,7 @@ There are no tests in this project.
 
 React 19 + TypeScript + Vite portfolio site at `wahajplayz.org`. Entry point is `index.tsx` at the project root — all source files (`App.tsx`, `types.ts`, `components/`, `context/`, `lib/`, `pages/`, `sections/`, `hooks/`, `config/`) live at the root, not in a `src/` directory. Uses **HashRouter** for routing.
 
-**Routing:** `App.tsx` wraps providers and defines routes: `/` (main landing page), `/posts`, `/profile`, `/membership`, `/donate`, `/store`, `/download`. Page components are lazy-loaded from `pages/`.
+**Routing:** `App.tsx` wraps providers and defines routes: `/` (main landing page), `/posts`, `/profile`, `/membership`, `/donate`, `/store`, `/download`, `/messages`. Page components are lazy-loaded from `pages/`.
 
 **Provider stack** (outermost → innermost): `DataProvider` → `CurrencyProvider` → `AuthProvider` → `SupportProvider` → `StoreProvider`.
 
@@ -35,6 +35,9 @@ React 19 + TypeScript + Vite portfolio site at `wahajplayz.org`. Entry point is 
 - `wahaj_data/support` — `OwnerConfig` (goal, membership tiers, donation settings, posts, adminPermissions)
 - `wahaj_data/store` — `StoreConfig` (products, categories, headings)
 - `users/{uid}/memberships/{tierId}` — membership records written by Stripe webhook; read by `hooks/useUserMemberships.ts`
+- `users/{uid}/digitalPurchases/{productId}` — digital purchase records (`productId`, `status: 'pending'|'paid'`, `grantedAt`); read by `hooks/useDigitalPurchases.ts`
+- `contact_messages/{id}` — contact form submissions (`name`, `email`, `subject`, `message`, `read`, `createdAt`); written by `api/contact.js`
+- `conversations/{id}` — buyer-seller order conversations (`orderId`, `buyerUid`, `productNames`, `lastMessage`, `unreadOwner`, `unreadBuyer`); subcollection `conversations/{id}/messages/{id}` holds individual messages
 
 **Note:** Pending join requests are stored as `discord_users/{discordId}` records with `role: 'pending'` — there is no separate `requests` collection.
 
@@ -71,9 +74,20 @@ Similarly for Storage rules. Both snippets are also embedded in `components/Admi
 
 **Post visibility:** `'public' | 'members' | 'tier-specific'` with `allowedTiers: string[]`. `pages/Posts.tsx` and `sections/PostsFeed.tsx` use `hooks/useUserMemberships.ts` to check `hasTier(id)` / `hasAnyTier(ids[])`. Locked posts show tier name badge and upgrade button.
 
-**Image uploads:** `compressImage()` in AdminPanel (Canvas API, max 1920px, 82% JPEG quality, skips files <300KB) is called before every `uploadAsset()`. Progress shown via `membershipUploadStatus` / `postUploadStatus` / `storeUploadStatus` state.
+**Contact system:** `components/ContactModal.tsx` — floating button (bottom-left) that opens a form POSTing to `api/contact.js`. The API sends an HTML email via Resend AND stores the submission in `contact_messages` Firestore collection. Supports Ctrl+Enter to submit.
 
-**Stripe / Payments:** Serverless functions in `api/stripe/` (Vercel). Client calls go through `lib/stripeCheckout.ts` posting to `VITE_STRIPE_API_BASE` + route. Firebase Auth ID tokens sent as `Authorization: Bearer`. `api/_lib/stripe.js` handles currency conversion (base GBP, 30-min cache). `api/_lib/admin.js` verifies Firebase ID tokens server-side.
+**Buyer-seller messaging:** `pages/Messages.tsx` — two-panel layout (conversation list + thread). Requires Google Auth. Three API endpoints in `api/messages/`: `conversations.js` (create/list/mark-read), `thread.js` (fetch messages for a conversation), `send.js` (post a message, triggers email notification via Resend). All require Firebase ID token in `Authorization: Bearer` header.
+
+**Hooks:**
+- `hooks/useUserMemberships.ts` — real-time listener for `users/{uid}/memberships`; exposes `hasTier(id)`, `hasAnyTier(ids[])`
+- `hooks/useDigitalPurchases.ts` — real-time listener for `users/{uid}/digitalPurchases`; exposes `purchases` array and `loading`
+- `hooks/useCurrency.ts` — re-exports `useCurrency` from `CurrencyContext`
+
+**Image upload progress:** Shown via `membershipUploadStatus` / `postUploadStatus` / `storeUploadStatus` state in AdminPanel.
+
+**Stripe / Payments:** Serverless functions in `api/stripe/` (Vercel). Client calls go through `lib/stripeCheckout.ts` posting to `VITE_STRIPE_API_BASE` + route. Firebase Auth ID tokens sent as `Authorization: Bearer`. `lib/stripeCheckout.ts` includes retry logic (3 attempts) for auth token refresh. `api/_lib/stripe.js` handles currency conversion (base GBP, 30-min cache). `api/_lib/admin.js` verifies Firebase ID tokens server-side. Shared API utilities in `api/_lib/`: `cors.js` (CORS + preflight), `http.js` (`sendJson`, `sendError`, `readJson`).
+
+**Asset storage:** `lib/githubStorage.ts` — uploads assets to GitHub repository storage via `api/upload.js`. `lib/cloudinary.ts` — Cloudinary integration (alternative/legacy asset storage). AdminPanel uses `compressImage()` (Canvas API, max 1920px, 82% JPEG quality, skips files <300KB) before every `uploadAsset()` call.
 
 **Config files:** `config/ownerConfig.ts` — `OwnerConfig`, `AdminPermissions`, `defaultAdminPermissions`, `Tier`, `Post`, `Attachment`. `config/storeConfig.ts` — `StoreConfig`, `StoreProduct`, `COUNTRIES`. Both are fallback defaults overridden by Firestore at runtime.
 
@@ -92,6 +106,8 @@ VITE_ADMIN_PASSWORD    # Password for admin panel access without Discord
 STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
 FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
 APP_URL   # e.g. https://www.wahajplayz.org
+RESEND_API_KEY   # Email sending (contact form + messaging notifications)
+OWNER_EMAIL      # Destination for contact form emails
 ```
 
 **Path Alias:** `@` resolves to the project root (e.g., `@/types`, `@/lib/discord`).

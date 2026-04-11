@@ -9,6 +9,7 @@ export interface CartVariantSelection {
   colorLabel: string;
   type: string;
   size: string;
+  customAnswers?: Record<string, string>;
 }
 
 export interface CartItem {
@@ -28,12 +29,14 @@ interface AddCartItemInput {
   maxQuantity: number;
   variant: CartVariantSelection;
   image: string;
+  effectivePrice?: number;
 }
 
 interface CartContextType {
   items: CartItem[];
   subtotal: number;
   isOpen: boolean;
+  authLoading: boolean;
   checkoutLoading: boolean;
   checkoutError: string;
   openCart: () => void;
@@ -55,7 +58,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
   const { currency } = useCurrency();
-  const { user, openAuthModal } = useAuth();
+  const { user, authLoading, openAuthModal } = useAuth();
 
   const subtotal = useMemo(
     () => items.reduce((sum, item) => sum + item.price * item.quantity, 0),
@@ -65,7 +68,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const openCart = () => setIsOpen(true);
   const closeCart = () => setIsOpen(false);
 
-  const addItem = ({ product, quantity, maxQuantity, variant, image }: AddCartItemInput) => {
+  const addItem = ({ product, quantity, maxQuantity, variant, image, effectivePrice }: AddCartItemInput) => {
     const id = buildItemId(product.id, variant);
     setCheckoutError('');
     setItems(current => {
@@ -83,7 +86,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id,
           productId: product.id,
           name: product.name,
-          price: product.price,
+          price: effectivePrice ?? product.price,
           image,
           quantity: Math.min(maxQuantity, quantity),
           maxQuantity,
@@ -110,11 +113,22 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCheckoutError('');
     setCheckoutLoading(true);
     try {
-      await startStoreCheckout(items.map(item => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        variantLabel: `${item.variant.colorLabel} / ${item.variant.type} / ${item.variant.size}`,
-      })), currency.code);
+      await startStoreCheckout(items.map(item => {
+        const parts: string[] = [];
+        if (item.variant.colorLabel) parts.push(`Colour: ${item.variant.colorLabel}`);
+        if (item.variant.type) parts.push(`Type: ${item.variant.type}`);
+        if (item.variant.size) parts.push(`Size: ${item.variant.size}`);
+        if (item.variant.customAnswers) {
+          Object.entries(item.variant.customAnswers).forEach(([label, value]) => {
+            if (value) parts.push(`${label}: ${value}`);
+          });
+        }
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          variantLabel: parts.join(' | '),
+        };
+      }), currency.code, user);
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Failed to start checkout.');
       setCheckoutLoading(false);
@@ -127,6 +141,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    if (authLoading) {
+      setCheckoutError('Sign-in is still loading. Please wait a moment and try again.');
+      return;
+    }
+
     if (!user) {
       openAuthModal(() => { void launchCheckout(); });
       return;
@@ -136,7 +155,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <CartContext.Provider value={{ items, subtotal, isOpen, checkoutLoading, checkoutError, openCart, closeCart, addItem, updateQuantity, removeItem, checkout }}>
+    <CartContext.Provider value={{ items, subtotal, isOpen, authLoading, checkoutLoading, checkoutError, openCart, closeCart, addItem, updateQuantity, removeItem, checkout }}>
       {children}
     </CartContext.Provider>
   );

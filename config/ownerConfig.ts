@@ -1,4 +1,11 @@
 export interface Milestone { amount: number; label: string; }
+export interface GoalItem {
+  id: string; title: string; enabled: boolean;
+  type: 'monthly' | 'one-time';
+  currency: string; currencyCode: string;
+  target: number; raised: number; description: string;
+  milestones: Milestone[];
+}
 export interface Benefit { icon: string; text: string; highlighted: boolean; }
 export interface Attachment {
   id: string; filename: string; url: string; fileType: string;
@@ -20,6 +27,7 @@ export interface Tier {
   stripeMonthlyUrl?: string; stripeYearlyUrl?: string; stripeLifetimeUrl?: string;
   discordRoleIds: string[]; lifetimeDiscordRoleIds: string[];
   benefits: Benefit[]; lifetimeExtraBenefits: Benefit[];
+  storeDiscountPercent?: number;
 }
 export interface AdminPermissions {
   roadmap: boolean;
@@ -39,12 +47,9 @@ export const defaultAdminPermissions: AdminPermissions = {
 };
 
 export interface OwnerConfig {
-  goal: {
-    enabled: boolean; type: 'monthly' | 'one-time';
-    currency: string; currencyCode: string;
-    target: number; raised: number; description: string;
-    milestones: Milestone[];
-  };
+  goals: GoalItem[];
+  /** @deprecated use goals */
+  goal?: never;
   membership: {
     heading: string; subheading: string;
     yearlyDiscountPercent: number; tiers: Tier[];
@@ -60,20 +65,24 @@ export interface OwnerConfig {
 }
 
 export const ownerConfig: OwnerConfig = {
-  goal: {
-    enabled: true,
-    type: 'monthly',
-    currency: '£',
-    currencyCode: 'GBP',
-    target: 500,
-    raised: 340,
-    description: 'Help keep this going — every bit counts.',
-    milestones: [
-      { amount: 100, label: 'Hosting covered' },
-      { amount: 250, label: 'New equipment' },
-      { amount: 500, label: 'Full-time creation' },
-    ],
-  },
+  goals: [
+    {
+      id: 'goal-default',
+      title: 'Monthly Goal',
+      enabled: true,
+      type: 'monthly',
+      currency: '£',
+      currencyCode: 'GBP',
+      target: 500,
+      raised: 340,
+      description: 'Help keep this going — every bit counts.',
+      milestones: [
+        { amount: 100, label: 'Hosting covered' },
+        { amount: 250, label: 'New equipment' },
+        { amount: 500, label: 'Full-time creation' },
+      ],
+    },
+  ],
   membership: {
     heading: 'Choose How You Want to Be Part of This',
     subheading: 'Every tier gives you something real. No fluff.',

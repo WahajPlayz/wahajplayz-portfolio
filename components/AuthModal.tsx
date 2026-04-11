@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { redirectToDiscordOAuth } from '@/lib/discord';
-import { auth } from '@/lib/firebase';
+import { waitForSignedInUser } from '@/lib/stripeCheckout';
 
 const AuthModal: React.FC = () => {
   const { isAuthModalOpen, closeAuthModal, pendingCallback,
@@ -13,19 +13,6 @@ const AuthModal: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   if (!isAuthModalOpen) return null;
-
-  const waitForGoogleSession = async (timeoutMs = 5000) => {
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-      const user = auth.currentUser;
-      if (user && !user.isAnonymous) {
-        await user.getIdToken(true);
-        return true;
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 150));
-    }
-    return false;
-  };
 
   const handleSocial = async (fn: () => Promise<void>) => {
     setLoading(true); setError('');
@@ -46,7 +33,10 @@ const AuthModal: React.FC = () => {
 
   const handleSkipDiscord = async () => {
     localStorage.setItem('wahaj_skip_discord', '1');
-    await waitForGoogleSession();
+    const user = await waitForSignedInUser();
+    if (user) {
+      await user.getIdToken(true);
+    }
     closeAuthModal();
     if (pendingCallback) pendingCallback();
   };

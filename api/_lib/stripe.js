@@ -98,4 +98,16 @@ export const buildPriceData = async ({ amountInBaseCurrency, currency, name, des
   };
 };
 
+export const convertToBaseCurrency = async (amountInMinorUnits, fromCurrency) => {
+  const currency = String(fromCurrency || BASE_CURRENCY).toUpperCase();
+  const major = ZERO_DECIMAL_CURRENCIES.has(currency)
+    ? amountInMinorUnits
+    : amountInMinorUnits / 100;
+  if (currency === BASE_CURRENCY) return roundMajorAmount(major, BASE_CURRENCY);
+  const rates = await getExchangeRates(BASE_CURRENCY);
+  const rate = rates[currency];
+  if (!rate) return 0;
+  return roundMajorAmount(major / rate, BASE_CURRENCY);
+};
+
 export const BASE_STRIPE_CURRENCY = BASE_CURRENCY;

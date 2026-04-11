@@ -39,10 +39,13 @@ interface DataContextType {
   addProject: (title: string, iconType: RoadmapProject['iconType']) => void;
   removeProject: (projectId: string) => void;
   renameProject: (projectId: string, newTitle: string) => void;
+  updateProject: (projectId: string, patch: Partial<RoadmapProject>) => void;
   addSection: (projectId: string, title: string) => void;
   removeSection: (projectId: string, sectionId: string) => void;
+  renameSection: (projectId: string, sectionId: string, newTitle: string) => void;
   addStep: (projectId: string, sectionId: string, text: string) => void;
   removeStep: (projectId: string, sectionId: string, stepId: string) => void;
+  renameStep: (projectId: string, sectionId: string, stepId: string, newText: string) => void;
   toggleStep: (projectId: string, sectionId: string, stepId: string) => void;
   reorderProjects: (ids: string[]) => void;
   reorderSections: (projectId: string, ids: string[]) => void;
@@ -425,6 +428,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     saveRoadmap(roadmapProjects.map(p => p.id === projectId ? { ...p, title: newTitle } : p));
   };
 
+  const updateProject = (projectId: string, patch: Partial<RoadmapProject>) => {
+    saveRoadmap(roadmapProjects.map(p => p.id === projectId ? { ...p, ...patch } : p));
+  };
+
   const addSection = (projectId: string, title: string) => {
     saveRoadmap(roadmapProjects.map(p =>
       p.id === projectId ? { ...p, sections: [...p.sections, { id: Date.now().toString(), title, steps: [] }] } : p
@@ -434,6 +441,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const removeSection = (projectId: string, sectionId: string) => {
     saveRoadmap(roadmapProjects.map(p =>
       p.id === projectId ? { ...p, sections: p.sections.filter(s => s.id !== sectionId) } : p
+    ));
+  };
+
+  const renameSection = (projectId: string, sectionId: string, newTitle: string) => {
+    saveRoadmap(roadmapProjects.map(p =>
+      p.id === projectId ? { ...p, sections: p.sections.map(s => s.id === sectionId ? { ...s, title: newTitle } : s) } : p
     ));
   };
 
@@ -451,6 +464,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (p.id !== projectId) return p;
       return { ...p, sections: p.sections.map(s =>
         s.id === sectionId ? { ...s, steps: s.steps.filter(step => step.id !== stepId) } : s
+      )};
+    }));
+  };
+
+  const renameStep = (projectId: string, sectionId: string, stepId: string, newText: string) => {
+    saveRoadmap(roadmapProjects.map(p => {
+      if (p.id !== projectId) return p;
+      return { ...p, sections: p.sections.map(s =>
+        s.id === sectionId ? { ...s, steps: s.steps.map(step =>
+          step.id === stepId ? { ...step, text: newText } : step
+        )} : s
       )};
     }));
   };
@@ -556,10 +580,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addProject,
       removeProject,
       renameProject,
+      updateProject,
       addSection,
       removeSection,
+      renameSection,
       addStep,
       removeStep,
+      renameStep,
       toggleStep,
       reorderProjects,
       reorderSections,

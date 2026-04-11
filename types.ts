@@ -47,6 +47,9 @@ export interface RoadmapProject {
   iconType: 'gamepad' | 'sparkles' | 'wrench' | 'zap' | 'code';
   color: string;
   sections: RoadmapSection[];
+  imageUrl?: string;
+  description?: string;
+  status?: 'active' | 'planned' | 'completed' | 'on-hold';
 }
 
 export interface AppUser {

@@ -3,6 +3,7 @@ import { ShoppingBag, Package, Download, Lock, ExternalLink } from 'lucide-react
 import { useStore } from '@/context/StoreContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
+import { isProductRestrictedInCountry } from '@/config/storeConfig';
 
 const StoreFront: React.FC = () => {
   const { config } = useStore();
@@ -37,9 +38,11 @@ const StoreFront: React.FC = () => {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {featured.map(product => {
-            const isBlocked = product.type === 'physical' && userCountry && product.blockedCountries.includes(userCountry);
-            const price = formatPrice(product.price, baseCurrency);
-            const compareAt = product.compareAtPrice > 0 ? formatPrice(product.compareAtPrice, baseCurrency) : null;
+            const isBlocked = isProductRestrictedInCountry(product, userCountry);
+            const salePercent = product.salePercent || 0;
+            const effectivePrice = salePercent > 0 ? Math.round(product.price * (1 - salePercent / 100) * 100) / 100 : product.price;
+            const price = formatPrice(effectivePrice, baseCurrency);
+            const compareAt = salePercent > 0 ? formatPrice(product.price, baseCurrency) : null;
             return (
               <div
                 key={product.id}
@@ -65,7 +68,7 @@ const StoreFront: React.FC = () => {
                   </div>
                   {compareAt && (
                     <div className="absolute top-2 right-2 px-2 py-0.5 font-orbitron text-xs font-bold" style={{ background: 'rgba(239,68,68,0.9)', color: '#fff' }}>
-                      SALE
+                      -{salePercent}%
                     </div>
                   )}
                 </div>

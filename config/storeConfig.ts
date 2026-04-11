@@ -91,7 +91,7 @@ export interface StoreProduct {
   name: string;
   description: string;
   price: number;
-  compareAtPrice: number;
+  salePercent?: number;
   type: 'digital' | 'physical';
   category: string;
   coverImage: string;
@@ -103,7 +103,9 @@ export interface StoreProduct {
   enabled: boolean;
   featured: boolean;
   tags: string[];
+  shippingCountryMode?: 'all-except-blocked' | 'only-selected';
   blockedCountries: string[];
+  allowedCountries?: string[];
   galleryImages?: string[];
   features?: string[];
   cautions?: string[];
@@ -113,6 +115,7 @@ export interface StoreProduct {
   sizeOptions?: string[];
   bulkDiscounts?: { label: string; minQuantity: number; percentOff: number }[];
   reviews?: { id: string; reviewer: string; rating: number; date: string; comment: string }[];
+  customFields?: { id: string; label: string; type: 'text' | 'select' | 'color-picker'; options?: string[]; colorSwatches?: { name: string; hex: string }[]; required: boolean; placeholder?: string }[];
 }
 
 export interface StoreConfig {
@@ -136,3 +139,13 @@ export const storeDefaults: StoreConfig = {
   products: [],
 };
 
+export const isProductRestrictedInCountry = (product: StoreProduct, userCountry: string) => {
+  if (product.type !== 'physical' || !userCountry) return false;
+
+  if (product.shippingCountryMode === 'only-selected') {
+    const allowedCountries = product.allowedCountries || [];
+    return allowedCountries.length > 0 ? !allowedCountries.includes(userCountry) : true;
+  }
+
+  return product.blockedCountries.includes(userCountry);
+};

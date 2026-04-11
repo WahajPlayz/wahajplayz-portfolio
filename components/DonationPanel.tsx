@@ -8,7 +8,7 @@ const ZERO_DECIMAL_CURRENCIES = new Set(['JPY', 'KRW', 'CLP', 'IDR', 'TWD', 'HUF
 
 const DonationPanel: React.FC = () => {
   const { config } = useSupportData();
-  const baseCurrency = config.goal.currencyCode || 'GBP';
+  const baseCurrency = (config.goals?.[0]?.currencyCode || 'GBP') || 'GBP';
   const { currency, formatPrice, convert } = useCurrency();
   const { donation } = config;
   const [amount, setAmount] = useState<number | null>(null);

@@ -120,9 +120,10 @@ const PostsFeed: React.FC = () => {
           <div className="w-full max-w-2xl max-h-[80vh] overflow-y-auto p-8 relative"
             style={{ background: '#0d0e12', border: '1px solid rgba(0,212,255,0.3)', clipPath: 'polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)' }}>
             <button onClick={() => setModal(null)} className="absolute top-4 right-4 text-gray-600 hover:text-white"><X size={20} /></button>
+            {modal.coverImage && <img src={modal.coverImage} alt={modal.title} className="w-full rounded mb-6 object-cover max-h-64" />}
             <p className="text-gray-600 text-xs font-mono mb-2">{new Date(modal.publishedAt).toLocaleDateString()}</p>
             <h2 className="font-orbitron font-bold text-2xl mb-6 text-white">{modal.title}</h2>
-            <div className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{modal.content}</div>
+            <div className="text-gray-300 text-sm leading-relaxed prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: modal.content }} />
           </div>
         </div>
       )}
