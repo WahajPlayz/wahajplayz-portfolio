@@ -84,7 +84,7 @@ const DonationSuccessPage: React.FC = () => {
               className="font-orbitron font-black text-4xl md:text-5xl mb-4 leading-tight"
               style={{ background: 'linear-gradient(135deg,#ec4899,#a855f7,#00d4ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
             >
-              {result.donorName !== 'Anonymous' ? result.donorName.split(' ')[0] + '!' : 'You're amazing!'}
+              {result.donorName !== 'Anonymous' ? result.donorName.split(' ')[0] + '!' : "You're amazing!"}
             </h1>
 
             <div
