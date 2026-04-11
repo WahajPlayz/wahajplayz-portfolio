@@ -1,5 +1,5 @@
 import { applyCors, handleOptions } from '../_lib/cors.js';
-import { verifyIdToken, getBucket, getDb } from '../_lib/admin.js';
+import { verifyIdToken, getDb, getStorageClient } from '../_lib/admin.js';
 import { getStoreProduct } from '../_lib/data.js';
 import { readJson, sendError } from '../_lib/http.js';
 
@@ -28,17 +28,17 @@ export default async function handler(req, res) {
       return sendError(res, 404, 'Digital product not found.');
     }
 
-    const userPurchase = await getDb().doc(`users/${decodedToken.uid}/digitalPurchases/${productId}`).get();
-    if (!userPurchase.exists || userPurchase.data()?.status !== 'paid') {
+    const { data: userPurchase } = await getDb().from('digital_purchases').select('status').eq('user_id', decodedToken.uid).eq('product_id', productId).single();
+    if (!userPurchase || userPurchase.status !== 'paid') {
       return sendError(res, 403, 'This account does not have access to that download.');
     }
 
     if (product.digitalFilePath) {
-      const [url] = await getBucket().file(product.digitalFilePath).getSignedUrl({
-        action: 'read',
-        expires: Date.now() + 1000 * 60 * 10,
-      });
-      return res.status(200).json({ url });
+      const { data: signedData, error: signedError } = await getStorageClient().from('digital-downloads').createSignedUrl(product.digitalFilePath, 600);
+      if (signedError || !signedData?.signedUrl) {
+        return sendError(res, 500, 'Failed to generate download URL.');
+      }
+      return res.status(200).json({ url: signedData.signedUrl });
     }
 
     if (product.digitalFileUrl) {

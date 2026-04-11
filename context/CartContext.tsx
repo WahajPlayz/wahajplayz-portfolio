@@ -128,7 +128,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           quantity: item.quantity,
           variantLabel: parts.join(' | '),
         };
-      }), currency.code, user);
+      }), currency.code);
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Failed to start checkout.');
       setCheckoutLoading(false);

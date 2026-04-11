@@ -2,8 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Send, MessageSquare, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { ensureStorageAuth } from '@/lib/firebase';
-import { getAuth } from 'firebase/auth';
+import { ensureAuth, getAuthToken } from '@/lib/supabase';
 
 const API = import.meta.env.VITE_STRIPE_API_BASE as string;
 
@@ -11,8 +10,8 @@ interface Message { id: string; text: string; senderRole: 'owner' | 'buyer'; sen
 interface Conversation { id: string; orderId: string; productNames: string[]; lastMessage: string; lastMessageAt: number; unreadBuyer: number; }
 
 const getToken = async () => {
-  await ensureStorageAuth();
-  return (await getAuth().currentUser?.getIdToken()) || '';
+  await ensureAuth();
+  return (await getAuthToken()) || '';
 };
 
 const MessagesPage: React.FC = () => {

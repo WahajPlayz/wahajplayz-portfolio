@@ -1,42 +1,50 @@
 import { getDb } from './admin.js';
 
 export const getStoreProduct = async (productId) => {
-  const snap = await getDb().doc('wahaj_data/store').get();
-  if (!snap.exists) return null;
-  const data = snap.data();
-  return data?.products?.find((product) => product.id === productId) || null;
+  const { data } = await getDb().from('store_config').select('products').eq('id', 1).single();
+  return (data?.products ?? []).find((p) => p.id === productId) ?? null;
 };
 
 export const getSupportConfig = async () => {
-  const snap = await getDb().doc('wahaj_data/support').get();
-  return snap.exists ? snap.data() : {};
+  const { data } = await getDb().from('support_config').select('*').eq('id', 1).single();
+  if (!data) return {};
+  return {
+    goals: data.goals ?? [],
+    membership: data.membership ?? {},
+    donation: data.donation ?? {},
+    posts: data.posts ?? [],
+    membershipPage: data.membership_page ?? {},
+    donatePage: data.donate_page ?? {},
+    adminPermissions: data.admin_permissions ?? {},
+  };
 };
 
 export const getMembershipTier = async (tierId) => {
   const config = await getSupportConfig();
-  return config?.membership?.tiers?.find((tier) => tier.id === tierId) || null;
+  return config?.membership?.tiers?.find((tier) => tier.id === tierId) ?? null;
 };
 
 export const recordTransaction = async (session, extra = {}) => {
-  await getDb().collection('transactions').doc(session.id).set({
+  await getDb().from('transactions').upsert({
     id: session.id,
     status: session.payment_status || 'unpaid',
-    amountTotal: session.amount_total || 0,
+    amount_total: session.amount_total || 0,
     currency: session.currency?.toUpperCase() || '',
-    customerEmail: session.customer_details?.email || null,
-    customerName: session.customer_details?.name || null,
-    createdAt: Date.now(),
+    customer_email: session.customer_details?.email || null,
+    created_at: new Date().toISOString(),
     ...extra,
-  }, { merge: true });
+  });
 };
 
 export const grantDigitalPurchase = async (uid, product, sessionId) => {
-  await getDb().doc(`users/${uid}/digitalPurchases/${product.id}`).set({
-    productId: product.id,
-    productName: product.name,
-    digitalFileName: product.digitalFileName || '',
-    sessionId,
+  await getDb().from('digital_purchases').upsert({
+    user_id: uid,
+    product_id: product.id,
+    product_name: product.name,
+    digital_file_name: product.digitalFileName || '',
+    session_id: sessionId,
     status: 'paid',
-    grantedAt: Date.now(),
-  }, { merge: true });
+    granted_at: Date.now(),
+    updated_at: Date.now(),
+  });
 };

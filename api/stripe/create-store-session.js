@@ -27,11 +27,9 @@ const applyDiscount = (price, percent) =>
 
 const getAllowedShippingCountries = (product) => {
   if (product.type !== 'physical') return [];
-
   if (product.shippingCountryMode === 'only-selected') {
     return (product.allowedCountries || []).filter(Boolean);
   }
-
   const blocked = new Set((product.blockedCountries || []).filter(Boolean));
   return ALL_SHIPPING_COUNTRIES.filter((code) => !blocked.has(code));
 };
@@ -58,16 +56,14 @@ export default async function handler(req, res) {
     }
 
     // Check per-tier membership discount — take the best discount across active tiers
-    const db = getDb();
     let memberDiscount = 0;
-    const membershipsSnap = await db.collection(`users/${decodedToken.uid}/memberships`).get();
-    if (!membershipsSnap.empty) {
+    const { data: memberships } = await getDb().from('memberships').select('tier_id, status').eq('user_id', decodedToken.uid);
+    if (memberships && memberships.length > 0) {
       const supportConfig = await getSupportConfig();
       const tiers = supportConfig?.membership?.tiers || [];
-      for (const doc of membershipsSnap.docs) {
-        const { tierId, status } = doc.data();
-        if (status !== 'active') continue;
-        const tier = tiers.find(t => t.id === tierId);
+      for (const m of memberships) {
+        if (m.status !== 'active') continue;
+        const tier = tiers.find(t => t.id === m.tier_id);
         if (tier?.storeDiscountPercent > 0) {
           memberDiscount = Math.max(memberDiscount, tier.storeDiscountPercent);
         }
@@ -99,12 +95,13 @@ export default async function handler(req, res) {
       }
 
       if (product.type === 'digital') {
-        await getDb().doc(`users/${decodedToken.uid}/digitalPurchases/${product.id}`).set({
-          productId: product.id,
-          productName: product.name,
+        await getDb().from('digital_purchases').upsert({
+          user_id: decodedToken.uid,
+          product_id: product.id,
+          product_name: product.name,
           status: 'pending',
-          updatedAt: Date.now(),
-        }, { merge: true });
+          updated_at: Date.now(),
+        });
       }
 
       cartItems.push({ product, quantity, variantLabel });

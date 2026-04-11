@@ -35,26 +35,23 @@ export default async function handler(req, res) {
       return sendError(res, 403, 'Only the owner can purge team members.');
     }
 
-    const db = getDb();
-    const deletedDiscordUsers = [];
-    const discordUsersSnap = await db.collection('discord_users').get();
-    for (const docSnap of discordUsersSnap.docs) {
-      const data = docSnap.data();
-      if (docSnap.id === ownerDiscordId || data?.role === 'owner') continue;
-      await docSnap.ref.delete();
-      deletedDiscordUsers.push(docSnap.id);
-    }
+    const { data: toDelete, error: fetchError } = await getDb()
+      .from('discord_users')
+      .select('discord_id')
+      .neq('discord_id', ownerDiscordId)
+      .neq('role', 'owner');
 
-    const deletedRequests = [];
-    const requestsSnap = await db.collection('requests').get();
-    for (const docSnap of requestsSnap.docs) {
-      await docSnap.ref.delete();
-      deletedRequests.push(docSnap.id);
+    if (fetchError) throw fetchError;
+
+    let deletedCount = 0;
+    for (const row of (toDelete || [])) {
+      await getDb().from('discord_users').delete().eq('discord_id', row.discord_id);
+      deletedCount++;
     }
 
     return res.status(200).json({
-      removedUsers: deletedDiscordUsers.length,
-      removedRequests: deletedRequests.length,
+      removedUsers: deletedCount,
+      removedRequests: 0,
     });
   } catch (error) {
     console.error('purge-team-members failed', error);

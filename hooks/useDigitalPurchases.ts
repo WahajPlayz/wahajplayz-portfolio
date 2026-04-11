@@ -1,40 +1,45 @@
-import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { db } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 
-type DigitalPurchase = {
+interface DigitalPurchase {
   productId: string;
-  status: 'pending' | 'paid';
+  productName: string;
+  status: string;
   grantedAt?: number;
-};
+  sessionId?: string;
+}
 
 export const useDigitalPurchases = () => {
   const { user } = useAuth();
-  const [purchases, setPurchases] = useState<Record<string, DigitalPurchase>>({});
-  const [loading, setLoading] = useState(false);
+  const [purchases, setPurchases] = useState<DigitalPurchase[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPurchases = useCallback(async () => {
+    if (!user) { setPurchases([]); setLoading(false); return; }
+    const { data } = await supabase
+      .from('digital_purchases')
+      .select('product_id, product_name, status, granted_at, session_id')
+      .eq('user_id', user.id);
+    setPurchases((data || []).map(row => ({
+      productId: row.product_id,
+      productName: row.product_name,
+      status: row.status,
+      grantedAt: row.granted_at,
+      sessionId: row.session_id,
+    })));
+    setLoading(false);
+  }, [user]);
 
   useEffect(() => {
-    if (!user) {
-      setPurchases({});
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    const ref = collection(db, 'users', user.uid, 'digitalPurchases');
-    const unsub = onSnapshot(ref, snap => {
-      const next: Record<string, DigitalPurchase> = {};
-      snap.forEach(doc => {
-        const data = doc.data() as DigitalPurchase;
-        next[doc.id] = data;
-      });
-      setPurchases(next);
-      setLoading(false);
-    }, () => setLoading(false));
-
-    return unsub;
-  }, [user]);
+    fetchPurchases();
+    if (!user) return;
+    const channel = supabase.channel(`digital-purchases-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'digital_purchases', filter: `user_id=eq.${user.id}` },
+        () => fetchPurchases())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, fetchPurchases]);
 
   return { purchases, loading };
 };

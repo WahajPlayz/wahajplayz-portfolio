@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db, ensureStorageAuth } from '../lib/firebase';
+import { supabase, ensureAuth } from '@/lib/supabase';
 import { StoreConfig, storeDefaults } from '../config/storeConfig';
 
 interface StoreContextType {
@@ -10,7 +9,6 @@ interface StoreContextType {
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
-const DOC = () => doc(db, 'wahaj_data', 'store');
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<StoreConfig>(storeDefaults);
@@ -19,14 +17,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     let cancelled = false;
 
-    getDoc(DOC()).then((snap) => {
-      if (cancelled) return;
-      if (snap.exists()) setConfig({ ...storeDefaults, ...snap.data() as StoreConfig });
-      setLoading(false);
-    }).catch((error) => {
-      console.error('StoreContext load failed, using defaults:', error);
-      if (!cancelled) setLoading(false);
-    });
+    supabase.from('store_config').select('*').eq('id', 1).single()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error('StoreContext load failed, using defaults:', error);
+        } else if (data) {
+          setConfig({
+            ...storeDefaults,
+            ...(data as Record<string, unknown>),
+            storePage: (data as Record<string, unknown>).store_page ?? storeDefaults.storePage,
+          } as StoreConfig);
+        }
+        setLoading(false);
+      })
+      .catch((error) => {
+        console.error('StoreContext load failed, using defaults:', error);
+        if (!cancelled) setLoading(false);
+      });
 
     return () => {
       cancelled = true;
@@ -34,9 +42,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const saveStore = async (c: StoreConfig) => {
-    await ensureStorageAuth();
+    await ensureAuth();
     setConfig(c);
-    await setDoc(DOC(), c);
+    await supabase.from('store_config').update({
+      enabled: c.enabled,
+      heading: c.heading,
+      subheading: c.subheading,
+      store_page: c.storePage,
+      categories: c.categories,
+      products: c.products,
+    }).eq('id', 1);
   };
 
   return (

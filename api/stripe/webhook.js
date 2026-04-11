@@ -1,6 +1,5 @@
-import admin from 'firebase-admin';
 import { applyCors, handleOptions } from '../_lib/cors.js';
-import { getAdminApp, getDb } from '../_lib/admin.js';
+import { getDb } from '../_lib/admin.js';
 import { getStripe, convertToBaseCurrency } from '../_lib/stripe.js';
 import { readRawBody, sendError } from '../_lib/http.js';
 import { getStoreProduct, recordTransaction, grantDigitalPurchase } from '../_lib/data.js';
@@ -20,7 +19,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    getAdminApp();
     const signature = req.headers['stripe-signature'];
     if (!signature || typeof signature !== 'string') {
       return sendError(res, 400, 'Missing Stripe signature.');
@@ -48,72 +46,47 @@ export default async function handler(req, res) {
         const donorName = session.metadata?.username || session.customer_details?.name || 'Anonymous';
         const donorEmail = session.customer_details?.email || null;
         const donationMessage = session.metadata?.message || '';
-        console.log('[webhook] processing donation from:', donorName, 'amount:', session.amount_total, session.currency, 'message:', donationMessage || '(none)');
+        console.log('[webhook] processing donation from:', donorName);
 
-        await recordTransaction(session, {
-          kind: 'donation',
-          message: donationMessage,
-        });
+        await recordTransaction(session, { kind: 'donation', message: donationMessage });
 
         const amountGBP = await convertToBaseCurrency(session.amount_total || 0, session.currency || 'GBP');
 
-        // Create donation conversation record
-        await getDb().collection('donation_conversations').doc(session.id).set({
-          transactionId: session.id,
-          donorName,
-          donorEmail,
-          amountGBP,
-          amountOriginal: session.amount_total || 0,
-          currencyOriginal: (session.currency || 'GBP').toUpperCase(),
+        await getDb().from('donations').upsert({
+          id: session.id,
+          donor_name: donorName,
+          donor_email: donorEmail,
+          amount_gbp: amountGBP,
+          amount_original: session.amount_total || 0,
+          currency_original: (session.currency || 'GBP').toUpperCase(),
           message: donationMessage,
-          createdAt: Date.now(),
+          created_at: new Date().toISOString(),
           replied: false,
-          lastReplyAt: null,
         });
 
-        // Increment the first enabled goal — only if goals are already configured in Firestore
-        const supportSnap = await getDb().doc('wahaj_data/support').get();
-        const supportData = supportSnap.exists ? supportSnap.data() : null;
-        let goals = null;
-        if (Array.isArray(supportData?.goals) && supportData.goals.length > 0) {
-          goals = [...supportData.goals];
-        } else if (supportData?.goal) {
-          goals = [{ id: 'goal-default', title: 'Goal', ...supportData.goal }];
-        }
-        if (goals) {
-          const goalIdx = goals.findIndex(g => g.enabled);
-          console.log('[webhook] goals found:', goals.length, 'enabled goal index:', goalIdx);
-          if (goalIdx !== -1) {
-            const prevRaised = goals[goalIdx].raised || 0;
-            goals[goalIdx] = { ...goals[goalIdx], raised: prevRaised + amountGBP };
-            console.log('[webhook] updating goal raised:', prevRaised, '->', goals[goalIdx].raised);
-            await getDb().doc('wahaj_data/support').set({ goals }, { merge: true });
-            console.log('[webhook] goal updated in Firestore');
-          } else {
-            console.log('[webhook] no enabled goal found — skipping goal update');
-          }
+        const { data: configRow } = await getDb().from('support_config').select('goals').eq('id', 1).single();
+        const goals = configRow?.goals ?? [];
+        const goalIdx = goals.findIndex((g) => g.enabled);
+        console.log('[webhook] goals found:', goals.length, 'enabled goal index:', goalIdx);
+        if (goalIdx !== -1) {
+          const prevRaised = goals[goalIdx].raised || 0;
+          goals[goalIdx] = { ...goals[goalIdx], raised: prevRaised + amountGBP };
+          await getDb().from('support_config').update({ goals }).eq('id', 1);
+          console.log('[webhook] goal updated raised:', prevRaised, '->', goals[goalIdx].raised);
         } else {
-          console.log('[webhook] no goals configured in Firestore — skipping goal update');
+          console.log('[webhook] no enabled goal found — skipping goal update');
         }
       }
 
       if (kind === 'store') {
         const parsedProductIds = (() => {
-          try {
-            return JSON.parse(session.metadata?.productIds || '[]');
-          } catch {
-            return [];
-          }
+          try { return JSON.parse(session.metadata?.productIds || '[]'); } catch { return []; }
         })();
         const productIds = Array.isArray(parsedProductIds) && parsedProductIds.length > 0
           ? parsedProductIds
           : (session.metadata?.productId ? [session.metadata.productId] : []);
 
-        await recordTransaction(session, {
-          kind: 'store',
-          uid,
-          productIds,
-        });
+        await recordTransaction(session, { kind: 'store', uid, product_ids: productIds });
 
         if (uid) {
           for (const productId of productIds) {
@@ -129,37 +102,40 @@ export default async function handler(req, res) {
         const tierId = session.metadata?.tierId || '';
         const billing = session.metadata?.billing || '';
         const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id || '';
+
         await recordTransaction(session, {
           kind: 'membership',
           uid,
-          tierId,
+          tier_id: tierId,
           billing,
-          customerId,
-          subscriptionId: session.subscription || null,
+          customer_id: customerId,
+          subscription_id: session.subscription || null,
         });
 
         if (uid && tierId) {
-          await getDb().doc(`users/${uid}/memberships/${tierId}`).set({
-            tierId,
+          await getDb().from('memberships').upsert({
+            user_id: uid,
+            tier_id: tierId,
             billing,
             status: session.mode === 'subscription' || session.payment_status === 'paid' ? 'active' : session.payment_status,
-            sessionId: session.id,
-            customerId,
-            subscriptionId: session.subscription || null,
-            updatedAt: Date.now(),
-          }, { merge: true });
+            session_id: session.id,
+            customer_id: customerId,
+            subscription_id: session.subscription || null,
+            updated_at: Date.now(),
+          });
         }
 
         if (typeof session.subscription === 'string') {
-          await getDb().collection('stripe_subscriptions').doc(session.subscription).set({
+          await getDb().from('stripe_subscriptions').upsert({
+            id: session.subscription,
             uid,
-            tierId,
+            tier_id: tierId,
             billing,
-            customerId,
+            customer_id: customerId,
             status: 'active',
-            sessionId: session.id,
-            updatedAt: Date.now(),
-          }, { merge: true });
+            session_id: session.id,
+            updated_at: Date.now(),
+          });
         }
       }
     }
@@ -169,31 +145,30 @@ export default async function handler(req, res) {
       const subscriptionId = invoice.subscription || invoice.parent?.subscription_details?.subscription;
 
       if (typeof subscriptionId === 'string') {
-        const subSnap = await getDb().collection('stripe_subscriptions').doc(subscriptionId).get();
-        if (subSnap.exists) {
-          const data = subSnap.data() || {};
+        const { data: sub } = await getDb().from('stripe_subscriptions').select('*').eq('id', subscriptionId).single();
+        if (sub) {
           const invoiceId = typeof invoice.id === 'string' && invoice.id ? invoice.id : 'invoice-fallback';
-          await getDb().collection('transactions').doc(invoiceId).set({
+          await getDb().from('transactions').upsert({
             id: invoiceId,
             kind: 'membership-renewal',
-            uid: data.uid || '',
-            tierId: data.tierId || '',
-            billing: data.billing || '',
+            uid: sub.uid || '',
+            tier_id: sub.tier_id || '',
+            billing: sub.billing || '',
             currency: invoice.currency?.toUpperCase() || '',
-            amountTotal: invoice.amount_paid || 0,
+            amount_total: invoice.amount_paid || 0,
             status: 'paid',
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
+            created_at: new Date().toISOString(),
+          });
         }
       }
     }
 
     if (event.type === 'customer.subscription.deleted') {
       const subscription = event.data.object;
-      await getDb().collection('stripe_subscriptions').doc(subscription.id).set({
+      await getDb().from('stripe_subscriptions').update({
         status: 'canceled',
-        updatedAt: Date.now(),
-      }, { merge: true });
+        updated_at: Date.now(),
+      }).eq('id', subscription.id);
     }
 
     return res.status(200).json({ received: true });

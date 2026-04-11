@@ -37,7 +37,7 @@ const MembershipTiers: React.FC = () => {
     setCheckoutError('');
     setStartingTierId(tier.id);
     try {
-      await startMembershipCheckout(tier.id, billing, currency.code, user);
+      await startMembershipCheckout(tier.id, billing, currency.code);
     } catch (error) {
       const nextError = error instanceof Error ? error.message : 'Failed to start Stripe Checkout.';
       setCheckoutError(nextError);

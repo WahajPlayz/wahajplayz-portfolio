@@ -1,20 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ArrowLeft, CreditCard, Link2, LogOut, Newspaper, Unlink } from 'lucide-react';
-import { collection, onSnapshot } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
 import { redirectToDiscordOAuth } from '@/lib/discord';
-import { db } from '@/lib/firebase';
 import { openMembershipBillingPortal } from '@/lib/stripeCheckout';
-
-type MembershipRecord = {
-  tierId: string;
-  billing: string;
-  status: string;
-  updatedAt?: number;
-  subscriptionId?: string | null;
-  customerId?: string;
-};
+import { useUserMemberships } from '@/hooks/useUserMemberships';
 
 const formatLabel = (value: string) => value
   .replace(/[-_]/g, ' ')
@@ -23,25 +13,9 @@ const formatLabel = (value: string) => value
 const ProfilePage: React.FC = () => {
   const { user, signOutFirebase } = useAuth();
   const { discordUser, discordLogout } = useData();
-  const [memberships, setMemberships] = useState<MembershipRecord[]>([]);
-  const [membershipLoading, setMembershipLoading] = useState(true);
+  const { memberships, loading: membershipLoading } = useUserMemberships();
   const [billingPortalLoading, setBillingPortalLoading] = useState(false);
   const [billingPortalError, setBillingPortalError] = useState('');
-
-  useEffect(() => {
-    if (!user) return;
-
-    const membershipsRef = collection(db, 'users', user.uid, 'memberships');
-    const unsubscribe = onSnapshot(membershipsRef, (snapshot) => {
-      setMemberships(snapshot.docs.map((doc) => doc.data() as MembershipRecord));
-      setMembershipLoading(false);
-    }, (error) => {
-      console.error('Membership profile load failed:', error);
-      setMembershipLoading(false);
-    });
-
-    return unsubscribe;
-  }, [user]);
 
   if (!user) {
     return (
@@ -74,9 +48,14 @@ const ProfilePage: React.FC = () => {
     ? 'https://cdn.discordapp.com/avatars/' + discordUser.id + '/' + discordUser.avatar + '.png?size=64'
     : null;
 
-  const providerLabel = user.providerData[0]?.providerId || 'email';
-  const activeMembership = useMemo(() => memberships.find((item) => item.status === 'active') ?? memberships[0] ?? null, [memberships]);
+  const membershipList = Object.values(memberships);
+  const providerLabel = user.app_metadata?.provider || user.user_metadata?.iss || 'google';
+  const activeMembership = useMemo(() => membershipList.find((item) => item.status === 'active') ?? membershipList[0] ?? null, [membershipList]);
   const canManageSubscription = !!activeMembership?.subscriptionId;
+
+  const displayName = user.user_metadata?.full_name || user.user_metadata?.name || 'Anonymous';
+  const avatarSrc = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
+  const email = user.email;
 
   return (
     <div className="min-h-screen pt-20 pb-16" style={{ background: '#0d0e12' }}>
@@ -89,16 +68,16 @@ const ProfilePage: React.FC = () => {
 
         <div className="p-6 mb-6" style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.2)', clipPath: 'polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%)' }}>
           <div className="flex items-center gap-4 mb-4">
-            {user.photoURL
-              ? <img src={user.photoURL} alt="avatar" className="w-14 h-14 rounded-full" />
+            {avatarSrc
+              ? <img src={avatarSrc} alt="avatar" className="w-14 h-14 rounded-full" />
               : <div className="w-14 h-14 rounded-full flex items-center justify-center font-orbitron text-xl"
                   style={{ background: 'rgba(0,212,255,0.2)', color: '#00d4ff' }}>
-                  {(user.displayName || user.email || '?')[0].toUpperCase()}
+                  {(displayName || email || '?')[0].toUpperCase()}
                 </div>
             }
             <div>
-              <p className="font-orbitron font-bold text-white">{user.displayName || 'Anonymous'}</p>
-              <p className="text-gray-500 text-xs font-mono">{user.email}</p>
+              <p className="font-orbitron font-bold text-white">{displayName}</p>
+              <p className="text-gray-500 text-xs font-mono">{email}</p>
               <p className="text-gray-600 text-xs font-mono mt-1">via {providerLabel}</p>
             </div>
           </div>
@@ -155,7 +134,7 @@ const ProfilePage: React.FC = () => {
                 <p className="font-orbitron text-white text-lg">{formatLabel(activeMembership.tierId)}</p>
                 <p className="text-gray-400 text-xs mt-1">
                   Status: <span className="text-white">{formatLabel(activeMembership.status)}</span>
-                  {' '}• Billing: <span className="text-white">{formatLabel(activeMembership.billing)}</span>
+                  {' '}Â· Billing: <span className="text-white">{formatLabel(activeMembership.billing)}</span>
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">

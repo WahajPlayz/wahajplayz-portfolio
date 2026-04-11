@@ -4,8 +4,7 @@ import GoalBar from '@/components/GoalBar';
 import DonationPanel from '@/components/DonationPanel';
 import { useSupportData } from '@/context/SupportContext';
 import { useAuth } from '@/context/AuthContext';
-
-const API_BASE = (import.meta as any).env?.VITE_STRIPE_API_BASE as string || '';
+import { supabase } from '@/lib/supabase';
 
 interface PublicDonor {
   id: string;
@@ -15,6 +14,15 @@ interface PublicDonor {
   createdAt: number;
   ownerReply: string | null;
 }
+
+const rowToDonor = (row: Record<string, unknown>): PublicDonor => ({
+  id: row.id as string,
+  donorName: (row.donor_name as string) || 'Anonymous',
+  amountGBP: row.amount_gbp as number,
+  message: (row.message as string) || '',
+  createdAt: row.created_at as number,
+  ownerReply: (row.owner_reply as string | null) ?? null,
+});
 
 const DonatePage: React.FC = () => {
   const navigate = useNavigate();
@@ -26,11 +34,27 @@ const DonatePage: React.FC = () => {
   const [donors, setDonors] = useState<PublicDonor[]>([]);
 
   useEffect(() => {
-    if (!API_BASE) return;
-    fetch(`${API_BASE}/api/donations/public`)
-      .then(r => r.json())
-      .then(d => setDonors(d.donors || []))
-      .catch(() => {});
+    // Initial load
+    supabase
+      .from('donations')
+      .select('id, donor_name, amount_gbp, message, created_at, owner_reply')
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data, error }) => {
+        if (error) { console.error('Failed to load donors:', error); return; }
+        setDonors((data || []).map(row => rowToDonor(row as Record<string, unknown>)));
+      });
+
+    // Realtime INSERT subscription
+    const channel = supabase.channel('donations-wall')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'donations' },
+        (payload) => {
+          const d = payload.new as Record<string, unknown>;
+          setDonors(prev => [rowToDonor(d), ...prev.slice(0, 49)]);
+        })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
 

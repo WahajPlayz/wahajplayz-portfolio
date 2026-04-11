@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { redirectToDiscordOAuth } from '@/lib/discord';
-import { waitForSignedInUser } from '@/lib/stripeCheckout';
+import { supabase } from '@/lib/supabase';
 
 const AuthModal: React.FC = () => {
   const { isAuthModalOpen, closeAuthModal, pendingCallback,
@@ -33,10 +33,8 @@ const AuthModal: React.FC = () => {
 
   const handleSkipDiscord = async () => {
     localStorage.setItem('wahaj_skip_discord', '1');
-    const user = await waitForSignedInUser();
-    if (user) {
-      await user.getIdToken(true);
-    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) await supabase.auth.refreshSession();
     closeAuthModal();
     if (pendingCallback) pendingCallback();
   };

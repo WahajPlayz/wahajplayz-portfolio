@@ -13,19 +13,41 @@ export default async function handler(req, res) {
   const { conversationId } = req.query;
   if (!conversationId) return sendError(res, 400, 'Missing conversationId.');
 
-  const db = getDb();
-  const convSnap = await db.doc(`conversations/${conversationId}`).get();
-  if (!convSnap.exists) return sendError(res, 404, 'Not found.');
+  const { data: conv, error: convError } = await getDb()
+    .from('conversations')
+    .select('*')
+    .eq('id', conversationId)
+    .single();
+  if (convError || !conv) return sendError(res, 404, 'Not found.');
 
-  const conv = convSnap.data();
-  if (conv.buyerUid !== user.uid) {
-    // Allow if admin (we just check auth exists — admin verification is client-side)
-    // For extra security you could check a server-side admin flag
-  }
+  const { data: messages, error: msgError } = await getDb()
+    .from('conv_messages')
+    .select('id, sender_role, text, created_at')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+  if (msgError) throw msgError;
 
-  const messagesSnap = await db.collection(`conversations/${conversationId}/messages`)
-    .orderBy('createdAt', 'asc').get();
+  const conversation = {
+    id: conv.id,
+    orderId: conv.order_id,
+    buyerUid: conv.buyer_uid,
+    buyerEmail: conv.buyer_email,
+    buyerName: conv.buyer_name,
+    productIds: conv.product_ids,
+    productNames: conv.product_names,
+    createdAt: conv.created_at,
+    lastMessageAt: conv.last_message_at,
+    lastMessage: conv.last_message,
+    unreadOwner: conv.unread_owner,
+    unreadBuyer: conv.unread_buyer,
+  };
 
-  const messages = messagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return sendJson(res, 200, { conversation: { id: convSnap.id, ...conv }, messages });
+  const mapped = (messages || []).map(m => ({
+    id: m.id,
+    senderRole: m.sender_role,
+    text: m.text,
+    createdAt: m.created_at,
+  }));
+
+  return sendJson(res, 200, { conversation, messages: mapped });
 }

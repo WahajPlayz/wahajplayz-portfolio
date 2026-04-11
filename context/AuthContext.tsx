@@ -1,12 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  GoogleAuthProvider,
-  signOut,
-  User,
-} from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -28,18 +22,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pendingCallback, setPendingCallback] = useState<(() => void) | null>(null);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, u => {
-      setUser(u && !u.isAnonymous ? u : null);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user && !session.user.is_anonymous ? session.user : null);
       setAuthLoading(false);
     });
+
+    // Subscribe to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user && !session.user.is_anonymous ? session.user : null);
+      setAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const signInWithGoogle = async () => {
-    await signInWithPopup(auth, new GoogleAuthProvider());
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    });
   };
 
   const signOutFirebase = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
   };
 
   const openAuthModal = (onSuccess?: () => void) => {

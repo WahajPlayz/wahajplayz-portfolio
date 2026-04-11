@@ -17,7 +17,6 @@ export default async function handler(req, res) {
     return sendError(res, 400, 'Name, email, and message are required.');
   }
 
-  // Basic email format check
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return sendError(res, 400, 'Invalid email address.');
   }
@@ -54,17 +53,14 @@ export default async function handler(req, res) {
     return sendError(res, 500, err.message || 'Failed to send message.');
   }
 
-  // Save to Firestore so the admin panel can display it
+  // Save to database so the admin panel can display it
   try {
-    const db = getDb();
-    const docRef = db.collection('contact_messages').doc();
-    await docRef.set({
-      id: docRef.id,
+    await getDb().from('contact_messages').insert({
       name: name.trim(),
       email: email.trim(),
       subject: subject?.trim() || '',
       message: message.trim(),
-      createdAt: Date.now(),
+      created_at: new Date().toISOString(),
       read: false,
     });
   } catch { /* non-fatal — email was already sent */ }

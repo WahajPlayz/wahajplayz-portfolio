@@ -27,35 +27,26 @@ export default async function handler(req, res) {
     const { conversationId, text } = await readJson(req);
     if (!conversationId || !text?.trim()) return sendError(res, 400, 'Missing conversationId or text.');
 
-    const db = getDb();
-    const convRef = db.doc(`donation_conversations/${conversationId}`);
-    const convSnap = await convRef.get();
-    if (!convSnap.exists) return sendError(res, 404, 'Conversation not found.');
+    const { data: conv, error: fetchError } = await getDb()
+      .from('donations')
+      .select('donor_name, donor_email, amount_gbp, message')
+      .eq('id', conversationId)
+      .single();
+    if (fetchError || !conv) return sendError(res, 404, 'Conversation not found.');
 
-    const conv = convSnap.data();
-    const now = Date.now();
+    const now = new Date().toISOString();
 
-    // Store reply message
-    await db.collection(`donation_conversations/${conversationId}/messages`).add({
-      text: text.trim(),
-      senderRole: 'owner',
-      senderName: 'WahajPlayz',
-      createdAt: now,
-    });
-
-    // Update conversation (also cache reply text for public display)
-    await convRef.update({
+    await getDb().from('donations').update({
       replied: true,
-      lastReplyAt: now,
-      ownerReply: text.trim(),
-    });
+      last_reply_at: now,
+      owner_reply: text.trim(),
+    }).eq('id', conversationId);
 
-    // Email the donor
-    if (conv.donorEmail) {
-      const donorName = conv.donorName || 'Supporter';
-      const amountFormatted = conv.amountGBP != null ? `£${Number(conv.amountGBP).toFixed(2)}` : 'your donation';
+    if (conv.donor_email) {
+      const donorName = conv.donor_name || 'Supporter';
+      const amountFormatted = conv.amount_gbp != null ? `£${Number(conv.amount_gbp).toFixed(2)}` : 'your donation';
       await sendEmail({
-        to: conv.donorEmail,
+        to: conv.donor_email,
         subject: `Re: Your donation to WahajPlayz`,
         html: `
           <div style="font-family:sans-serif;max-width:540px;margin:auto;background:#0d0e12;color:#e5e7eb;padding:32px;border-radius:12px">

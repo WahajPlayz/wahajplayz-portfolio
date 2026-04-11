@@ -17,19 +17,19 @@ export default async function handler(req, res) {
       return sendError(res, 401, 'You must be signed in to manage your membership.');
     }
 
-    const snapshot = await getDb()
-      .collection('stripe_subscriptions')
-      .where('uid', '==', decodedToken.uid)
-      .where('status', '==', 'active')
-      .limit(1)
-      .get();
+    const { data: subs } = await getDb()
+      .from('stripe_subscriptions')
+      .select('customer_id')
+      .eq('uid', decodedToken.uid)
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false })
+      .limit(1);
 
-    if (snapshot.empty) {
+    if (!subs || subs.length === 0) {
       return sendError(res, 404, 'No active Stripe subscription was found for this account.');
     }
 
-    const data = snapshot.docs[0].data();
-    const customerId = data.customerId;
+    const customerId = subs[0].customer_id;
     if (!customerId) {
       return sendError(res, 400, 'This membership does not have a Stripe customer attached yet.');
     }

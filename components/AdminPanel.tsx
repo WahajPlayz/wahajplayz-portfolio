@@ -5,7 +5,7 @@ import { useStore } from '../context/StoreContext';
 import { StoreProduct, StoreConfig, COUNTRIES } from '../config/storeConfig';
 import { Tier, AdminPermissions } from '../config/ownerConfig';
 import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search, MessageSquare, Send, Gamepad2, Sparkles, Wrench, Zap, Code } from 'lucide-react';
-import { ensureStorageAuth } from '../lib/firebase';
+import { ensureAuth, getAuthToken, supabase } from '../lib/supabase';
 import { uploadToGitHub } from '../lib/githubStorage';
 import { OWNER_DISCORD_ID } from '../lib/discord';
 
@@ -54,43 +54,17 @@ const compressImage = (file: File, maxDim = 1920, quality = 0.82): Promise<File>
     img.src = objectUrl;
   });
 
-const STORAGE_RULES_SNIPPET = `rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
-  }
-}`;
+const STORAGE_RULES_SNIPPET = `-- Supabase Storage: set bucket policies in the Supabase dashboard
+-- Public read, authenticated write (anon key counts as authenticated for RLS)
+-- Enable RLS on storage.objects and add policies as needed.`;
 
-const FIRESTORE_RULES_SNIPPET = `rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /wahaj_data/{document} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
-    match /discord_users/{discordId} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
-    match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
-      match /memberships/{membershipId} {
-        allow read: if request.auth != null && request.auth.uid == userId;
-        allow write: if request.auth != null;
-      }
-    }
-    match /conversations/{convId} {
-      allow read, write: if request.auth != null;
-      match /messages/{msgId} {
-        allow read, write: if request.auth != null;
-      }
-    }
-  }
-}`;
+const FIRESTORE_RULES_SNIPPET = `-- Supabase RLS policies (run in SQL editor or via migrations):
+-- support_config: public read, anon/service write
+-- discord_users: anon read/write (for portal sync)
+-- memberships: user read (auth.uid = user_id), service write
+-- digital_purchases: user read (auth.uid = user_id), service write
+-- contact_messages: service write (API), anon read for admin
+-- donations: public read, service write`;
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string') {
@@ -296,9 +270,8 @@ const AdminPanel: React.FC = () => {
   const loadAdminConvs = async () => {
     setAdminConvsLoading(true);
     try {
-      await ensureStorageAuth();
-      const { getAuth } = await import('firebase/auth');
-      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      await ensureAuth();
+      const token = (await getAuthToken()) || '';
       const res = await fetch(`${ADMIN_API}/api/messages/conversations?all=true`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setAdminConvs(data.conversations || []);
@@ -309,8 +282,7 @@ const AdminPanel: React.FC = () => {
     setAdminActiveConv(conv);
     setAdminMessages([]);
     try {
-      const { getAuth } = await import('firebase/auth');
-      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      const token = (await getAuthToken()) || '';
       const res = await fetch(`${ADMIN_API}/api/messages/thread?conversationId=${conv.id}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setAdminMessages(data.messages || []);
@@ -328,8 +300,7 @@ const AdminPanel: React.FC = () => {
     if (!adminReply.trim() || !adminActiveConv || adminSending) return;
     setAdminSending(true);
     try {
-      const { getAuth } = await import('firebase/auth');
-      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      const token = (await getAuthToken()) || '';
       await fetch(`${ADMIN_API}/api/messages/send`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -343,21 +314,18 @@ const AdminPanel: React.FC = () => {
   const loadContactMsgs = async () => {
     setContactLoading(true);
     try {
-      await ensureStorageAuth();
-      const { getFirestore, collection, getDocs, orderBy, query } = await import('firebase/firestore');
-      const db = getFirestore();
-      const q = query(collection(db, 'contact_messages'), orderBy('createdAt', 'desc'));
-      const snap = await getDocs(q);
-      setContactMsgs(snap.docs.map(d => d.data() as any));
+      const { data } = await supabase
+        .from('contact_messages')
+        .select('*')
+        .order('created_at', { ascending: false });
+      setContactMsgs((data || []) as any[]);
     } finally { setContactLoading(false); }
   };
 
   const markContactRead = async (msg: typeof contactMsgs[0]) => {
     if (msg.read) return;
     try {
-      await ensureStorageAuth();
-      const { getFirestore, doc, updateDoc } = await import('firebase/firestore');
-      await updateDoc(doc(getFirestore(), 'contact_messages', msg.id), { read: true });
+      await supabase.from('contact_messages').update({ read: true }).eq('id', msg.id);
       setContactMsgs(m => m.map(x => x.id === msg.id ? { ...x, read: true } : x));
     } catch { /* ignore */ }
   };
@@ -365,9 +333,8 @@ const AdminPanel: React.FC = () => {
   const loadDonorConvos = async () => {
     setDonorConvosLoading(true);
     try {
-      await ensureStorageAuth();
-      const { getAuth } = await import('firebase/auth');
-      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      await ensureAuth();
+      const token = (await getAuthToken()) || '';
       const res = await fetch(`${ADMIN_API}/api/donations/list`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setDonorConvos(data.conversations || []);
@@ -379,9 +346,8 @@ const AdminPanel: React.FC = () => {
     if (!text) return;
     setDonorReplying(convId);
     try {
-      await ensureStorageAuth();
-      const { getAuth } = await import('firebase/auth');
-      const token = (await getAuth().currentUser?.getIdToken()) || '';
+      await ensureAuth();
+      const token = (await getAuthToken()) || '';
       await fetch(`${ADMIN_API}/api/donations/reply`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -413,8 +379,8 @@ const AdminPanel: React.FC = () => {
     }
   }, [approveRole, config.adminPermissions]);
 
-  // Ensure Firebase anonymous auth is set so Firestore writes pass security rules
-  useEffect(() => { if (isAdminOpen) ensureStorageAuth(); }, [isAdminOpen]);
+  // Ensure Supabase auth is set so DB writes pass security rules
+  useEffect(() => { if (isAdminOpen) ensureAuth(); }, [isAdminOpen]);
 
   const uploadAsset = async (
     folder: string,

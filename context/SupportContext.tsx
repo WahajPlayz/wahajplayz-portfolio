@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db, ensureStorageAuth } from '../lib/firebase';
+import { supabase, ensureAuth } from '../lib/supabase';
 import { ownerConfig, OwnerConfig, GoalItem, AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
 
 interface SupportContextType {
@@ -15,74 +14,81 @@ interface SupportContextType {
 }
 
 const SupportContext = createContext<SupportContextType | undefined>(undefined);
-const DOC = () => doc(db, 'wahaj_data', 'support');
-const mergeConfig = (data?: Partial<OwnerConfig>): OwnerConfig => ({
-  goals: (() => {
-    if (data?.goals?.length) return data.goals;
-    // Migrate legacy single goal
-    const legacy = (data as any)?.goal;
-    if (legacy) return [{ id: 'goal-default', title: legacy.type === 'monthly' ? 'Monthly Goal' : 'Goal', ...legacy }];
-    return ownerConfig.goals;
-  })(),
-  membership: data?.membership ?? ownerConfig.membership,
-  donation: data?.donation ?? ownerConfig.donation,
-  posts: data?.posts ?? ownerConfig.posts,
-  membershipPage: data?.membershipPage ?? ownerConfig.membershipPage,
-  donatePage: data?.donatePage ?? ownerConfig.donatePage,
-  adminPermissions: data?.adminPermissions ?? defaultAdminPermissions,
-});
+
+// rowToConfig maps snake_case DB row → OwnerConfig camelCase, merging defaults
+const rowToConfig = (row: Record<string, unknown> | null): OwnerConfig => {
+  if (!row) return ownerConfig;
+  return {
+    goals: (() => {
+      if (Array.isArray(row.goals) && (row.goals as unknown[]).length > 0) return row.goals as GoalItem[];
+      const legacy = (row as Record<string, unknown>).goal;
+      if (legacy) return [{ id: 'goal-default', title: (legacy as Record<string, unknown>).type === 'monthly' ? 'Monthly Goal' : 'Goal', ...(legacy as object) }] as GoalItem[];
+      return ownerConfig.goals;
+    })(),
+    membership: Object.assign({}, ownerConfig.membership, (row.membership as object) ?? {}),
+    donation: Object.assign({}, ownerConfig.donation, (row.donation as object) ?? {}),
+    posts: (row.posts as OwnerConfig['posts']) ?? ownerConfig.posts,
+    membershipPage: Object.assign({}, ownerConfig.membershipPage, (row.membership_page as object) ?? {}),
+    donatePage: Object.assign({}, ownerConfig.donatePage, (row.donate_page as object) ?? {}),
+    adminPermissions: (row.admin_permissions as AdminPermissions) ?? defaultAdminPermissions,
+  };
+};
 
 export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<OwnerConfig>(ownerConfig);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(DOC(), { includeMetadataChanges: true }, (snap) => {
-      setConfig(snap.exists() ? mergeConfig(snap.data() as Partial<OwnerConfig>) : ownerConfig);
-      // Only mark loading done once we have server-confirmed data (not stale cache)
-      if (!snap.metadata.fromCache) setLoading(false);
-    }, (error) => {
-      console.error('SupportContext load failed, using defaults:', error);
-      setLoading(false);
-    });
+    supabase.from('support_config').select('*').eq('id', 1).single()
+      .then(({ data, error }) => {
+        if (error) console.error('SupportContext load failed, using defaults:', error);
+        setConfig(rowToConfig(data as Record<string, unknown> | null));
+        setLoading(false);
+      });
 
-    return unsubscribe;
+    const channel = supabase.channel('support-config')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'support_config', filter: 'id=eq.1' },
+        (payload) => setConfig(rowToConfig(payload.new as Record<string, unknown>)))
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const saveGoals = async (goals: GoalItem[]) => {
-    await ensureStorageAuth();
-    setConfig((current) => ({ ...current, goals }));
-    await setDoc(DOC(), { goals }, { merge: true });
+    await ensureAuth();
+    setConfig((c) => ({ ...c, goals }));
+    await supabase.from('support_config').update({ goals }).eq('id', 1);
   };
 
   const saveMembership = async (membership: OwnerConfig['membership']) => {
-    await ensureStorageAuth();
-    setConfig((current) => ({ ...current, membership }));
-    await setDoc(DOC(), { membership }, { merge: true });
+    await ensureAuth();
+    setConfig((c) => ({ ...c, membership }));
+    await supabase.from('support_config').update({ membership }).eq('id', 1);
   };
 
   const saveDonation = async (donation: OwnerConfig['donation']) => {
-    await ensureStorageAuth();
-    setConfig((current) => ({ ...current, donation }));
-    await setDoc(DOC(), { donation }, { merge: true });
+    await ensureAuth();
+    setConfig((c) => ({ ...c, donation }));
+    await supabase.from('support_config').update({ donation }).eq('id', 1);
   };
 
   const savePosts = async (posts: OwnerConfig['posts']) => {
-    await ensureStorageAuth();
-    setConfig((current) => ({ ...current, posts }));
-    await setDoc(DOC(), { posts }, { merge: true });
+    await ensureAuth();
+    setConfig((c) => ({ ...c, posts }));
+    await supabase.from('support_config').update({ posts }).eq('id', 1);
   };
 
   const savePageContent = async (field: 'membershipPage' | 'donatePage', data: { headline: string; subheading: string }) => {
-    await ensureStorageAuth();
-    setConfig((current) => ({ ...current, [field]: data }));
-    return setDoc(DOC(), { [field]: data }, { merge: true });
+    await ensureAuth();
+    setConfig((c) => ({ ...c, [field]: data }));
+    const col = field === 'membershipPage' ? 'membership_page' : 'donate_page';
+    await supabase.from('support_config').update({ [col]: data }).eq('id', 1);
   };
 
   const saveAdminPermissions = async (adminPermissions: AdminPermissions) => {
-    await ensureStorageAuth();
-    setConfig((current) => ({ ...current, adminPermissions }));
-    await setDoc(DOC(), { adminPermissions }, { merge: true });
+    await ensureAuth();
+    setConfig((c) => ({ ...c, adminPermissions }));
+    await supabase.from('support_config').update({ admin_permissions: adminPermissions }).eq('id', 1);
   };
 
   return (

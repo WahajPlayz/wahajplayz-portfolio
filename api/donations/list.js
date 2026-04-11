@@ -11,14 +11,28 @@ export default async function handler(req, res) {
   if (!user) return sendError(res, 401, 'Unauthorized.');
 
   try {
-    const db = getDb();
-    const snap = await db.collection('donation_conversations')
-      .orderBy('createdAt', 'desc')
-      .limit(100)
-      .get();
+    const { data: conversations, error: dbError } = await getDb()
+      .from('donations')
+      .select('id, donor_name, donor_email, amount_gbp, amount_original, currency_original, message, created_at, replied, last_reply_at, owner_reply')
+      .order('created_at', { ascending: false })
+      .limit(100);
 
-    const conversations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    return sendJson(res, 200, { conversations });
+    if (dbError) throw dbError;
+
+    const mapped = (conversations || []).map(d => ({
+      id: d.id,
+      donorName: d.donor_name,
+      donorEmail: d.donor_email,
+      amountGBP: d.amount_gbp,
+      amountOriginal: d.amount_original,
+      currencyOriginal: d.currency_original,
+      message: d.message,
+      createdAt: d.created_at,
+      replied: d.replied,
+      lastReplyAt: d.last_reply_at,
+      ownerReply: d.owner_reply,
+    }));
+    return sendJson(res, 200, { conversations: mapped });
   } catch (error) {
     console.error('donations/list failed', error);
     return sendError(res, 500, 'Failed to fetch donation conversations.');

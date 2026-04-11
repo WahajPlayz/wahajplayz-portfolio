@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { doc, collection, onSnapshot, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, db, ensureStorageAuth } from '../lib/firebase';
+import type { Session } from '@supabase/supabase-js';
+import { supabase, ensureAuth } from '../lib/supabase';
 import { FAQItem, RoadmapProject, AppUser, JoinRequest } from '../types';
 import { AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
 import {
@@ -119,6 +118,17 @@ const INITIAL_ROADMAP: RoadmapProject[] = [
   }
 ];
 
+// Map Supabase snake_case row → AppUser camelCase
+const rowToAppUser = (row: Record<string, unknown>): AppUser => ({
+  discordId: row.discord_id as string,
+  username: row.username as string,
+  avatar: row.avatar as string | null,
+  role: row.role as AppUser['role'],
+  projectIds: (row.project_ids as string[]) ?? [],
+  adminPermissions: row.admin_permissions as AdminPermissions | undefined,
+  createdAt: row.created_at as number,
+});
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [faqData, setFaqData] = useState<FAQItem[]>(() => {
     try { const s = localStorage.getItem('wahaj_faq'); return s ? JSON.parse(s) : INITIAL_FAQ; } catch { return INITIAL_FAQ; }
@@ -143,27 +153,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<Role>(null);
   const [authLoading, setAuthLoading] = useState(() => !!localStorage.getItem('discord_token'));
   const [portalSyncError, setPortalSyncError] = useState('');
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(auth.currentUser);
-  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
+  const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
+  const [supabaseAuthReady, setSupabaseAuthReady] = useState(false);
 
-  // Users & Requests from Firestore
+  // Users & Requests from Supabase
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [requests, setRequests] = useState<JoinRequest[]>([]);
   const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID;
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (user) => {
-      setFirebaseUser(user);
-      setFirebaseAuthReady(true);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSupabaseSession(session);
+      setSupabaseAuthReady(true);
     });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setSupabaseSession(session);
+      setSupabaseAuthReady(true);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!discordToken || !firebaseAuthReady || firebaseUser) return;
-    ensureStorageAuth().catch((error) => {
-      console.error('Failed to establish Firebase auth for Discord portal:', error);
+    if (!discordToken || !supabaseAuthReady || supabaseSession) return;
+    ensureAuth().catch((error) => {
+      console.error('Failed to establish Supabase auth for Discord portal:', error);
     });
-  }, [discordToken, firebaseAuthReady, firebaseUser]);
+  }, [discordToken, supabaseAuthReady, supabaseSession]);
 
   // Step 1: Parse Discord token from URL hash on initial load
   useEffect(() => {
@@ -191,7 +208,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    if (!firebaseAuthReady) {
+    if (!supabaseAuthReady) {
       setAuthLoading(true);
       return;
     }
@@ -215,15 +232,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           createdAt: Date.now(),
         });
         try {
-          if (!firebaseUser) await ensureStorageAuth();
-          await setDoc(doc(db, 'discord_users', user.id), {
-            discordId: user.id,
+          if (!supabaseSession) await ensureAuth();
+          await supabase.from('discord_users').upsert({
+            discord_id: user.id,
             username: user.global_name || user.username,
             avatar: user.avatar,
             role: 'owner',
-            projectIds: [],
-            createdAt: Date.now(),
-          }, { merge: true });
+            project_ids: [],
+            created_at: Date.now(),
+          });
         } catch (error) {
           console.error('Failed to sync owner user record:', error);
         }
@@ -232,11 +249,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const syncUser = async () => {
-        // Always ensure Firebase anonymous auth before Firestore operations
-        await ensureStorageAuth();
-        const userSnap = await getDoc(doc(db, 'discord_users', user.id));
-        if (userSnap.exists()) {
-          const appUser = userSnap.data() as AppUser;
+        // Always ensure Supabase auth before DB operations
+        await ensureAuth();
+        const { data: userRow } = await supabase
+          .from('discord_users')
+          .select('*')
+          .eq('discord_id', user.id)
+          .single();
+        if (userRow) {
+          const appUser = rowToAppUser(userRow as Record<string, unknown>);
           setCurrentAppUser(appUser);
           setRole(appUser.role);
           setPortalSyncError('');
@@ -250,7 +271,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             projectIds: [],
             createdAt: Date.now(),
           };
-          await setDoc(doc(db, 'discord_users', user.id), pendingUser, { merge: true });
+          await supabase.from('discord_users').upsert({
+            discord_id: user.id,
+            username: pendingUser.username,
+            avatar: pendingUser.avatar,
+            role: 'pending',
+            project_ids: [],
+            created_at: pendingUser.createdAt,
+          });
           setCurrentAppUser(pendingUser);
           setRole('pending');
           setPortalSyncError('');
@@ -260,7 +288,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         await syncUser();
       } catch {
-        // Retry once with a fresh auth token
+        // Retry once
         try {
           await syncUser();
         } catch (error) {
@@ -283,24 +311,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setPortalSyncError('Discord sign-in could not be verified. Please try again.');
       setAuthLoading(false);
     });
-  }, [discordToken, firebaseAuthReady, firebaseUser]);
+  }, [discordToken, supabaseAuthReady, supabaseSession]);
 
-  // Step 3: Watch for role changes from Firestore (e.g., when owner approves request)
+  // Step 3: Watch for role changes from Supabase (e.g., when owner approves request)
   useEffect(() => {
     if (!discordUser || role === 'owner') return;
-    const unsubscribe = onSnapshot(doc(db, 'discord_users', discordUser.id), (snap) => {
-      if (snap.exists()) {
-        const appUser = snap.data() as AppUser;
-        setCurrentAppUser(appUser);
-        setRole(appUser.role);
-        setPortalSyncError('');
-      } else {
-        setCurrentAppUser(null);
-        setRole('pending');
-        setPortalSyncError('');
-      }
-    });
-    return unsubscribe;
+    const channel = supabase.channel(`discord-user-${discordUser.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'discord_users', filter: `discord_id=eq.${discordUser.id}` },
+        (payload) => {
+          if (payload.new && Object.keys(payload.new).length > 0) {
+            const appUser = rowToAppUser(payload.new as Record<string, unknown>);
+            setCurrentAppUser(appUser);
+            setRole(appUser.role);
+            setPortalSyncError('');
+          } else {
+            setCurrentAppUser(null);
+            setRole('pending');
+            setPortalSyncError('');
+          }
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [discordUser?.id, role]);
 
   useEffect(() => {
@@ -310,55 +341,74 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [role, isMemberPanelOpen, isOwnerAccount]);
 
-  // Firestore real-time listeners
+  // Supabase real-time listeners for admin/owner user lists
   useEffect(() => {
-    if (!firebaseUser || (role !== 'owner' && role !== 'admin')) {
+    if (!supabaseSession || (role !== 'owner' && role !== 'admin')) {
       setAppUsers([]);
       return;
     }
-    const unsubscribe = onSnapshot(
-      collection(db, 'discord_users'),
-      (snap) => setAppUsers(snap.docs.map(d => d.data() as AppUser)),
-      (error) => console.error('Firestore users error:', error)
-    );
-    return unsubscribe;
-  }, [firebaseUser, role]);
+    // Initial load
+    supabase.from('discord_users').select('*').then(({ data }) => {
+      setAppUsers((data || []).map(row => rowToAppUser(row as Record<string, unknown>)));
+    });
+
+    const channel = supabase.channel('discord-users-all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'discord_users' },
+        async () => {
+          const { data } = await supabase.from('discord_users').select('*');
+          setAppUsers((data || []).map(row => rowToAppUser(row as Record<string, unknown>)));
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabaseSession, role]);
 
   useEffect(() => {
-    if (!firebaseUser || (role !== 'owner' && role !== 'admin')) {
+    if (!supabaseSession || (role !== 'owner' && role !== 'admin')) {
       setRequests([]);
       return;
     }
-    const unsubscribe = onSnapshot(
-      collection(db, 'discord_users'),
-      (snap) => setRequests(
-        snap.docs
-          .map(d => d.data() as AppUser)
-          .filter(user => user.role === 'pending')
-          .map(user => ({
-            discordId: user.discordId,
-            username: user.username,
-            avatar: user.avatar,
-            status: 'pending',
-            createdAt: user.createdAt,
-          }))
-      ),
-      (error) => console.error('Firestore requests error:', error)
-    );
-    return unsubscribe;
-  }, [firebaseUser, role]);
+    // Initial load
+    supabase.from('discord_users').select('*').eq('role', 'pending').then(({ data }) => {
+      setRequests((data || []).map(row => {
+        const u = rowToAppUser(row as Record<string, unknown>);
+        return {
+          discordId: u.discordId,
+          username: u.username,
+          avatar: u.avatar,
+          status: 'pending',
+          createdAt: u.createdAt,
+        };
+      }));
+    });
+
+    const channel = supabase.channel('discord-users-pending')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'discord_users' },
+        async () => {
+          const { data } = await supabase.from('discord_users').select('*').eq('role', 'pending');
+          setRequests((data || []).map(row => {
+            const u = rowToAppUser(row as Record<string, unknown>);
+            return {
+              discordId: u.discordId,
+              username: u.username,
+              avatar: u.avatar,
+              status: 'pending',
+              createdAt: u.createdAt,
+            };
+          }));
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabaseSession, role]);
 
   useEffect(() => {
     let cancelled = false;
 
-    getDoc(doc(db, 'wahaj_data', 'roadmap'))
-      .then((snap) => {
+    supabase.from('roadmap_config').select('projects').eq('id', 1).single()
+      .then(({ data, error }) => {
         if (cancelled) return;
-        if (snap.exists()) {
-          setRoadmapProjects(snap.data().projects ?? INITIAL_ROADMAP);
-        }
-      })
-      .catch((error) => console.error('Firestore roadmap load error:', error));
+        if (error) { console.error('Supabase roadmap load error:', error); return; }
+        if (data?.projects) setRoadmapProjects(data.projects as RoadmapProject[]);
+      });
 
     return () => {
       cancelled = true;
@@ -407,7 +457,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Roadmap helpers
   const saveRoadmap = (updated: RoadmapProject[]) => {
     setRoadmapProjects(updated);
-    setDoc(doc(db, 'wahaj_data', 'roadmap'), { projects: updated }).catch(console.error);
+    supabase.from('roadmap_config').update({ projects: updated }).eq('id', 1).catch(console.error);
   };
 
   // FAQ
@@ -513,49 +563,54 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const approveRequest = async (discordId: string, assignRole: 'admin' | 'member', projectIds: string[], adminPermissions?: AdminPermissions) => {
     const pendingUser = appUsers.find(u => u.discordId === discordId && u.role === 'pending');
     if (!pendingUser) return;
-    await setDoc(doc(db, 'discord_users', discordId), {
-      discordId,
+    await supabase.from('discord_users').upsert({
+      discord_id: discordId,
       username: pendingUser.username,
       avatar: pendingUser.avatar,
       role: assignRole,
-      projectIds,
-      ...(assignRole === 'admin' ? { adminPermissions: adminPermissions ?? { ...defaultAdminPermissions } } : {}),
-      createdAt: pendingUser.createdAt || Date.now(),
-    }, { merge: true });
+      project_ids: projectIds,
+      ...(assignRole === 'admin' ? { admin_permissions: adminPermissions ?? { ...defaultAdminPermissions } } : {}),
+      created_at: pendingUser.createdAt || Date.now(),
+    });
   };
 
   const rejectRequest = async (discordId: string) => {
-    await deleteDoc(doc(db, 'discord_users', discordId));
+    await supabase.from('discord_users').delete().eq('discord_id', discordId);
   };
 
   const updateUserRole = async (discordId: string, newRole: 'admin' | 'member') => {
     const user = appUsers.find(u => u.discordId === discordId);
     if (!user) return;
-    const nextUser = {
-      ...user,
+    const updateData: Record<string, unknown> = {
+      discord_id: discordId,
+      username: user.username,
+      avatar: user.avatar,
       role: newRole,
-      ...(newRole === 'admin' ? { adminPermissions: user.adminPermissions ?? { ...defaultAdminPermissions } } : {}),
+      project_ids: user.projectIds,
+      created_at: user.createdAt,
     };
-    if (newRole !== 'admin' && 'adminPermissions' in nextUser) {
-      delete (nextUser as AppUser & { adminPermissions?: AdminPermissions }).adminPermissions;
+    if (newRole === 'admin') {
+      updateData.admin_permissions = user.adminPermissions ?? { ...defaultAdminPermissions };
+    } else {
+      updateData.admin_permissions = null;
     }
-    await setDoc(doc(db, 'discord_users', discordId), nextUser);
+    await supabase.from('discord_users').upsert(updateData);
   };
 
   const updateAdminPermissions = async (discordId: string, permissions: AdminPermissions) => {
     const user = appUsers.find(u => u.discordId === discordId);
     if (!user || user.role !== 'admin') return;
-    await setDoc(doc(db, 'discord_users', discordId), { ...user, adminPermissions: permissions });
+    await supabase.from('discord_users').update({ admin_permissions: permissions }).eq('discord_id', discordId);
   };
 
   const updateUserProjects = async (discordId: string, projectIds: string[]) => {
     const user = appUsers.find(u => u.discordId === discordId);
     if (!user) return;
-    await setDoc(doc(db, 'discord_users', discordId), { ...user, projectIds });
+    await supabase.from('discord_users').update({ project_ids: projectIds }).eq('discord_id', discordId);
   };
 
   const removeUser = async (discordId: string) => {
-    await deleteDoc(doc(db, 'discord_users', discordId));
+    await supabase.from('discord_users').delete().eq('discord_id', discordId);
   };
 
   return (

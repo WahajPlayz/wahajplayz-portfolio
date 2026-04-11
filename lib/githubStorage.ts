@@ -1,4 +1,4 @@
-import { getAuth } from 'firebase/auth';
+import { getAuthToken } from '@/lib/supabase';
 
 const API_BASE = import.meta.env.VITE_STRIPE_API_BASE as string;
 
@@ -19,8 +19,7 @@ export const uploadToGitHub = async (
   const content = await fileToBase64(file);
   onProgress?.(50);
 
-  const user = getAuth().currentUser;
-  const token = user ? await user.getIdToken() : '';
+  const token = (await getAuthToken()) ?? '';
 
   const res = await fetch(`${API_BASE}/api/upload`, {
     method: 'POST',

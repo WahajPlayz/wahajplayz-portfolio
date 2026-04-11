@@ -33,8 +33,7 @@ export default async function handler(req, res) {
     }
 
     const productId = session.metadata?.productId || '';
-    const purchaseSnap = await getDb().doc(`users/${decodedToken.uid}/digitalPurchases/${productId}`).get();
-    const purchase = purchaseSnap.exists ? purchaseSnap.data() : null;
+    const { data: purchase } = await getDb().from('digital_purchases').select('status').eq('user_id', decodedToken.uid).eq('product_id', productId).single();
 
     if (session.payment_status === 'paid') {
       return res.status(200).json({

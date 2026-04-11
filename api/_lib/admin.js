@@ -1,45 +1,29 @@
-import admin from 'firebase-admin';
+import { createClient } from '@supabase/supabase-js';
 
-const requiredEnv = (name) => {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
+const getAdminClient = () => {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  return createClient(url, key);
 };
 
-export const getAdminApp = () => {
-  if (admin.apps.length > 0) {
-    return admin.app();
-  }
+/** Returns a Supabase admin client for database queries. Replaces getDb() / firebase-admin. */
+export const getDb = () => getAdminClient();
 
-  const projectId = requiredEnv('FIREBASE_PROJECT_ID');
-  const clientEmail = requiredEnv('FIREBASE_CLIENT_EMAIL');
-  const privateKey = requiredEnv('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n');
-  const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`;
+/** Returns a Supabase storage instance for digital downloads. Replaces getBucket(). */
+export const getStorageClient = () => getAdminClient().storage;
 
-  return admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId,
-      clientEmail,
-      privateKey,
-    }),
-    storageBucket,
-  });
-};
-
-export const getDb = () => admin.firestore(getAdminApp());
-
-export const getBucket = () => admin.storage(getAdminApp()).bucket();
-
+/**
+ * Verifies a Supabase JWT from an Authorization header.
+ * Returns { uid, email } on success, or null on failure.
+ * Replaces firebase-admin verifyIdToken().
+ */
 export const verifyIdToken = async (authorizationHeader) => {
-  if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) {
-    return null;
-  }
-
+  if (!authorizationHeader || !authorizationHeader.startsWith('Bearer ')) return null;
   const token = authorizationHeader.slice('Bearer '.length).trim();
   if (!token) return null;
 
-  return admin.auth(getAdminApp()).verifyIdToken(token);
+  const { data: { user }, error } = await getAdminClient().auth.getUser(token);
+  if (error || !user) return null;
+  return { uid: user.id, email: user.email ?? null };
 };
-

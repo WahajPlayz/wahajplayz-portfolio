@@ -27,37 +27,35 @@ export default async function handler(req, res) {
   const { conversationId, text, senderRole } = await readJson(req);
   if (!conversationId || !text?.trim() || !senderRole) return sendError(res, 400, 'Missing fields.');
 
-  const db = getDb();
-  const convRef = db.doc(`conversations/${conversationId}`);
-  const convSnap = await convRef.get();
-  if (!convSnap.exists) return sendError(res, 404, 'Conversation not found.');
+  const { data: conv, error: convError } = await getDb()
+    .from('conversations')
+    .select('*')
+    .eq('id', conversationId)
+    .single();
+  if (convError || !conv) return sendError(res, 404, 'Conversation not found.');
 
-  const conv = convSnap.data();
+  if (senderRole === 'buyer' && conv.buyer_uid !== user.uid) return sendError(res, 403, 'Forbidden.');
 
-  // Verify sender is allowed
-  if (senderRole === 'buyer' && conv.buyerUid !== user.uid) return sendError(res, 403, 'Forbidden.');
+  const now = new Date().toISOString();
 
-  const message = {
+  await getDb().from('conv_messages').insert({
+    conversation_id: conversationId,
+    sender_role: senderRole,
     text: text.trim(),
-    senderRole,
-    senderName: senderRole === 'owner' ? 'WahajPlayz' : (conv.buyerName || 'Buyer'),
-    createdAt: Date.now(),
-    read: false,
-  };
-
-  await db.collection(`conversations/${conversationId}/messages`).add(message);
-  await convRef.update({
-    lastMessage: text.trim().slice(0, 120),
-    lastMessageAt: Date.now(),
-    unreadOwner: senderRole === 'buyer' ? (conv.unreadOwner || 0) + 1 : conv.unreadOwner || 0,
-    unreadBuyer: senderRole === 'owner' ? (conv.unreadBuyer || 0) + 1 : conv.unreadBuyer || 0,
+    created_at: now,
   });
 
-  // Send email notification
-  const productName = conv.productNames?.[0] || 'your order';
-  if (senderRole === 'owner' && conv.buyerEmail) {
+  await getDb().from('conversations').update({
+    last_message: text.trim().slice(0, 120),
+    last_message_at: now,
+    unread_owner: senderRole === 'buyer' ? (conv.unread_owner || 0) + 1 : conv.unread_owner || 0,
+    unread_buyer: senderRole === 'owner' ? (conv.unread_buyer || 0) + 1 : conv.unread_buyer || 0,
+  }).eq('id', conversationId);
+
+  const productName = (conv.product_names)?.[0] || 'your order';
+  if (senderRole === 'owner' && conv.buyer_email) {
     await sendEmail({
-      to: conv.buyerEmail,
+      to: conv.buyer_email,
       subject: `New message about your order — ${productName}`,
       html: `
         <div style="font-family:sans-serif;max-width:540px;margin:auto;background:#0d0e12;color:#e5e7eb;padding:32px;border-radius:12px">
@@ -77,7 +75,7 @@ export default async function handler(req, res) {
       subject: `New message from buyer — ${productName}`,
       html: `
         <div style="font-family:sans-serif;max-width:540px;margin:auto;background:#0d0e12;color:#e5e7eb;padding:32px;border-radius:12px">
-          <h2 style="color:#00d4ff;font-size:18px;margin-bottom:8px">New message from ${conv.buyerName || conv.buyerEmail}</h2>
+          <h2 style="color:#00d4ff;font-size:18px;margin-bottom:8px">New message from ${conv.buyer_name || conv.buyer_email}</h2>
           <p style="color:#9ca3af;font-size:13px;margin-bottom:20px">Order: <strong style="color:#fff">${productName}</strong></p>
           <div style="background:#1a1b21;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px;margin-bottom:24px">
             <p style="margin:0;font-size:14px;line-height:1.6">${text.trim()}</p>
