@@ -16,6 +16,13 @@ const SingleGoalBar: React.FC<{ goal: GoalItem }> = ({ goal }) => {
     return () => obs.disconnect();
   }, []);
 
+  // Re-animate the bar whenever the raised amount changes
+  useEffect(() => {
+    setAnimated(false);
+    const t = setTimeout(() => setAnimated(true), 50);
+    return () => clearTimeout(t);
+  }, [goal.raised]);
+
   const base = goal.currencyCode || 'GBP';
   const raisedConverted = convert(goal.raised, base);
   const targetConverted = convert(goal.target, base);

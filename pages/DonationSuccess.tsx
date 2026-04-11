@@ -101,15 +101,29 @@ const DonationSuccessPage: React.FC = () => {
               Your support means everything. The goal bar has been updated and your donation is now live on the supporter wall.
             </p>
 
-            {result.message && (
-              <div
-                className="rounded-2xl border p-5 mb-8 text-left"
-                style={{ background: 'rgba(255,255,255,0.025)', borderColor: 'rgba(236,72,153,0.2)' }}
-              >
-                <p className="text-xs font-orbitron text-pink-400 uppercase tracking-widest mb-2">Your Message</p>
-                <p className="text-gray-300 text-sm leading-relaxed italic">"{result.message}"</p>
+            <div
+              className="rounded-2xl border p-5 mb-8 text-left"
+              style={{ background: 'rgba(255,255,255,0.025)', borderColor: 'rgba(236,72,153,0.2)' }}
+            >
+              <p className="text-xs font-orbitron text-pink-400 uppercase tracking-widest mb-3">Your Entry on the Wall</p>
+              <div className="flex items-center gap-3 mb-3">
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-orbitron font-black text-sm"
+                  style={{ background: 'linear-gradient(135deg,rgba(236,72,153,0.25),rgba(168,85,247,0.2))', color: '#f9a8d4' }}
+                >
+                  {result.donorName[0]?.toUpperCase() || '?'}
+                </div>
+                <div>
+                  <p className="text-white font-bold text-sm">{result.donorName}</p>
+                  <p className="text-pink-400 font-mono text-xs">£{Number(result.amountGBP).toFixed(2)}</p>
+                </div>
               </div>
-            )}
+              {result.message ? (
+                <p className="text-gray-300 text-sm leading-relaxed italic">"{result.message}"</p>
+              ) : (
+                <p className="text-gray-600 text-xs italic">No message — your name and amount will still appear on the wall.</p>
+              )}
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button

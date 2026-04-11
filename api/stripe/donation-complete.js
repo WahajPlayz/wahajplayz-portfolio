@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     }
 
     const db = getDb();
-    const donorName = session.customer_details?.name || 'Anonymous';
+    const donorName = session.metadata?.username || session.customer_details?.name || 'Anonymous';
     const donorEmail = session.customer_details?.email || null;
     const donationMessage = session.metadata?.message || '';
     const amountGBP = await convertToBaseCurrency(session.amount_total || 0, session.currency || 'GBP');
@@ -52,31 +52,25 @@ export default async function handler(req, res) {
         lastReplyAt: null,
       });
 
-      // Update the first enabled goal
+      // Update the first enabled goal — only if goals are already configured in Firestore
       const supportData = await getSupportConfig();
-      let goals;
+      let goals = null;
       if (Array.isArray(supportData?.goals) && supportData.goals.length > 0) {
         goals = [...supportData.goals];
       } else if (supportData?.goal) {
         goals = [{ id: 'goal-default', title: 'Goal', ...supportData.goal }];
-      } else {
-        goals = [{
-          id: 'goal-default',
-          title: 'Monthly Goal',
-          enabled: true,
-          type: 'monthly',
-          currency: '£',
-          currencyCode: 'GBP',
-          target: 500,
-          raised: 0,
-          description: 'Help keep this going.',
-          milestones: [],
-        }];
       }
-      const goalIdx = goals.findIndex(g => g.enabled);
-      if (goalIdx !== -1) {
-        goals[goalIdx] = { ...goals[goalIdx], raised: (goals[goalIdx].raised || 0) + amountGBP };
-        await db.doc('wahaj_data/support').set({ goals }, { merge: true });
+      if (goals) {
+        const goalIdx = goals.findIndex(g => g.enabled);
+        if (goalIdx !== -1) {
+          goals[goalIdx] = { ...goals[goalIdx], raised: (goals[goalIdx].raised || 0) + amountGBP };
+          await db.doc('wahaj_data/support').set({ goals }, { merge: true });
+          console.log('[donation-complete] goal updated, raised now:', goals[goalIdx].raised);
+        } else {
+          console.log('[donation-complete] no enabled goal found');
+        }
+      } else {
+        console.log('[donation-complete] no goals configured in Firestore — skipping goal update');
       }
     }
 

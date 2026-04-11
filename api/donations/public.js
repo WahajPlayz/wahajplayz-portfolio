@@ -26,7 +26,6 @@ export default async function handler(req, res) {
           ownerReply: data.ownerReply || null,
         };
       })
-      .filter(d => d.message.trim().length > 0)
       .slice(0, 50);
 
     return sendJson(res, 200, { donors });

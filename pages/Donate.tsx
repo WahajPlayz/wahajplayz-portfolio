@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import GoalBar from '@/components/GoalBar';
 import DonationPanel from '@/components/DonationPanel';
 import { useSupportData } from '@/context/SupportContext';
@@ -18,7 +18,6 @@ interface PublicDonor {
 
 const DonatePage: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { config } = useSupportData();
   const { user } = useAuth();
   const { donatePage, posts } = config;
@@ -34,19 +33,6 @@ const DonatePage: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  // Re-fetch donors after Stripe redirects back with checkout=success,
-  // giving the webhook ~4 seconds to process and write to Firestore.
-  useEffect(() => {
-    if (!API_BASE) return;
-    if (!location.search.includes('checkout=success')) return;
-    const timer = setTimeout(() => {
-      fetch(`${API_BASE}/api/donations/public`)
-        .then(r => r.json())
-        .then(d => setDonors(d.donors || []))
-        .catch(() => {});
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [location.search]);
 
   const publicPosts = posts.filter(p => p.visibility === 'public');
   const sorted = [...publicPosts].sort((a, b) => {
@@ -150,7 +136,11 @@ const DonatePage: React.FC = () => {
                       {new Date(donor.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                     </span>
                   </div>
-                  <p className="text-gray-300 text-sm leading-relaxed italic">"{donor.message}"</p>
+                  {donor.message ? (
+                    <p className="text-gray-300 text-sm leading-relaxed italic">"{donor.message}"</p>
+                  ) : (
+                    <p className="text-gray-600 text-xs italic">No message left.</p>
+                  )}
                   {donor.ownerReply && (
                     <div className="mt-3 pl-3 border-l-2 border-cyan-500/40">
                       <p className="text-xs text-cyan-400 font-orbitron mb-1">WahajPlayz</p>

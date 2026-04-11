@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       console.log('[webhook] checkout.session.completed kind:', kind, 'session:', session.id);
 
       if (kind === 'donation') {
-        const donorName = session.customer_details?.name || 'Anonymous';
+        const donorName = session.metadata?.username || session.customer_details?.name || 'Anonymous';
         const donorEmail = session.customer_details?.email || null;
         const donationMessage = session.metadata?.message || '';
         console.log('[webhook] processing donation from:', donorName, 'amount:', session.amount_total, session.currency, 'message:', donationMessage || '(none)');
@@ -71,42 +71,29 @@ export default async function handler(req, res) {
           lastReplyAt: null,
         });
 
-        // Increment the first enabled goal's raised amount
+        // Increment the first enabled goal — only if goals are already configured in Firestore
         const supportSnap = await getDb().doc('wahaj_data/support').get();
         const supportData = supportSnap.exists ? supportSnap.data() : null;
-        let goals;
+        let goals = null;
         if (Array.isArray(supportData?.goals) && supportData.goals.length > 0) {
           goals = [...supportData.goals];
         } else if (supportData?.goal) {
-          // Migrate legacy single-goal field to array format
           goals = [{ id: 'goal-default', title: 'Goal', ...supportData.goal }];
-        } else if (!supportSnap.exists) {
-          // Document doesn't exist yet — create with a default enabled goal
-          goals = [{
-            id: 'goal-default',
-            title: 'Monthly Goal',
-            enabled: true,
-            type: 'monthly',
-            currency: '£',
-            currencyCode: 'GBP',
-            target: 500,
-            raised: 0,
-            description: 'Help keep this going.',
-            milestones: [],
-          }];
-        } else {
-          goals = [];
         }
-        const goalIdx = goals.findIndex(g => g.enabled);
-        console.log('[webhook] goals found:', goals.length, 'enabled goal index:', goalIdx);
-        if (goalIdx !== -1) {
-          const prevRaised = goals[goalIdx].raised || 0;
-          goals[goalIdx] = { ...goals[goalIdx], raised: prevRaised + amountGBP };
-          console.log('[webhook] updating goal raised:', prevRaised, '->', goals[goalIdx].raised);
-          await getDb().doc('wahaj_data/support').set({ goals }, { merge: true });
-          console.log('[webhook] goal updated in Firestore');
+        if (goals) {
+          const goalIdx = goals.findIndex(g => g.enabled);
+          console.log('[webhook] goals found:', goals.length, 'enabled goal index:', goalIdx);
+          if (goalIdx !== -1) {
+            const prevRaised = goals[goalIdx].raised || 0;
+            goals[goalIdx] = { ...goals[goalIdx], raised: prevRaised + amountGBP };
+            console.log('[webhook] updating goal raised:', prevRaised, '->', goals[goalIdx].raised);
+            await getDb().doc('wahaj_data/support').set({ goals }, { merge: true });
+            console.log('[webhook] goal updated in Firestore');
+          } else {
+            console.log('[webhook] no enabled goal found — skipping goal update');
+          }
         } else {
-          console.log('[webhook] no enabled goal found — skipping goal update');
+          console.log('[webhook] no goals configured in Firestore — skipping goal update');
         }
       }
 
