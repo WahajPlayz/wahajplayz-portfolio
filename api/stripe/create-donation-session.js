@@ -17,17 +17,17 @@ export default async function handler(req, res) {
     const currency = normalizeCurrency(body.currency);
     const message = String(body.message || '').trim().slice(0, 500);
     const username = String(body.username || '').trim().slice(0, 50);
+    const returnOrigin = String(body.returnOrigin || '').replace(/\/$/, '') || getAppUrl();
 
     if (!Number.isFinite(amount) || amount <= 0) {
       return sendError(res, 400, 'A valid donation amount is required.');
     }
 
     const stripe = getStripe();
-    const origin = getAppUrl();
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
-      success_url: `${origin}/#/donate/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/#/donate?checkout=cancel`,
+      success_url: `${returnOrigin}/#/donate/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${returnOrigin}/#/donate?checkout=cancel`,
       submit_type: 'donate',
       metadata: {
         kind: 'donation',

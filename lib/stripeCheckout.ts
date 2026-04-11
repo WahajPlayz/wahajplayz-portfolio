@@ -103,7 +103,8 @@ export const startStoreCheckout = async (
 };
 
 export const startDonationCheckout = async (amount: number, currency: string, message: string, username?: string) => {
-  const data = await postJson<{ url?: string }>('/api/stripe/create-donation-session', { amount, currency, message, username });
+  const returnOrigin = window.location.origin;
+  const data = await postJson<{ url?: string }>('/api/stripe/create-donation-session', { amount, currency, message, username, returnOrigin });
   redirectToStripe(data.url);
 };
 
