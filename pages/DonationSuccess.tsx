@@ -29,6 +29,7 @@ const DonationSuccessPage: React.FC = () => {
   const { formatPrice } = useCurrency();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [result, setResult] = useState<DonationResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -50,7 +51,10 @@ const DonationSuccessPage: React.FC = () => {
         setResult(data);
         setStatus('success');
       })
-      .catch(() => setStatus('error'));
+      .catch(err => {
+        setErrorMsg(err instanceof Error ? err.message : 'Unknown error');
+        setStatus('error');
+      });
   }, []);
 
   return (
@@ -153,9 +157,14 @@ const DonationSuccessPage: React.FC = () => {
               ⚠️
             </div>
             <h1 className="font-orbitron font-black text-3xl text-white mb-4">Something went wrong</h1>
-            <p className="text-gray-400 text-sm mb-8 max-w-sm mx-auto leading-relaxed">
-              We couldn't confirm your donation automatically. If your payment went through, it will still be recorded — please check back shortly or contact support.
+            <p className="text-gray-400 text-sm mb-4 max-w-sm mx-auto leading-relaxed">
+              We couldn't confirm your donation automatically.
             </p>
+            {errorMsg && (
+              <p className="text-red-400 font-mono text-xs mb-6 max-w-sm mx-auto px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 break-all">
+                {errorMsg}
+              </p>
+            )}
             <button
               onClick={() => navigate('/donate')}
               className="px-6 py-3 rounded-xl font-orbitron font-bold text-sm text-gray-400 hover:text-white transition-all"
