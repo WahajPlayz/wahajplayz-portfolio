@@ -16,6 +16,7 @@ export default async function handler(req, res) {
     const amount = Number.isFinite(rawAmount) ? rawAmount : NaN;
     const currency = normalizeCurrency(body.currency);
     const message = String(body.message || '').trim().slice(0, 500);
+    const username = String(body.username || '').trim().slice(0, 50);
 
     if (!Number.isFinite(amount) || amount <= 0) {
       return sendError(res, 400, 'A valid donation amount is required.');
@@ -31,6 +32,7 @@ export default async function handler(req, res) {
       metadata: {
         kind: 'donation',
         message,
+        username,
       },
       line_items: [
         {

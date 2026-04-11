@@ -14,6 +14,7 @@ const DonationPanel: React.FC = () => {
   const [amount, setAmount] = useState<number | null>(null);
   const [custom, setCustom] = useState('');
   const [message, setMessage] = useState('');
+  const [username, setUsername] = useState('');
   const [checkoutError, setCheckoutError] = useState('');
   const [startingCheckout, setStartingCheckout] = useState(false);
 
@@ -33,7 +34,7 @@ const DonationPanel: React.FC = () => {
     setCheckoutError('');
     setStartingCheckout(true);
     try {
-      await startDonationCheckout(finalAmount, currency.code, message.trim());
+      await startDonationCheckout(finalAmount, currency.code, message.trim(), username.trim());
     } catch (error) {
       const nextError = error instanceof Error ? error.message : 'Failed to start Stripe Checkout.';
       setCheckoutError(nextError);
@@ -129,11 +130,21 @@ const DonationPanel: React.FC = () => {
             />
           </div>
 
+          <input
+            type="text"
+            placeholder="Display name on Supporter Wall (optional)"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            maxLength={50}
+            className="w-full px-4 py-4 rounded-2xl bg-black/20 font-mono text-sm outline-none mb-3 border"
+            style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#d1d5db' }}
+          />
+
           <textarea
             placeholder="Leave a message (optional)"
             value={message}
             onChange={e => setMessage(e.target.value)}
-            rows={4}
+            rows={3}
             className="w-full px-4 py-4 rounded-2xl bg-black/20 font-mono text-sm outline-none resize-none mb-5 border"
             style={{ borderColor: 'rgba(255,255,255,0.1)', color: '#d1d5db' }}
           />
