@@ -1,4 +1,4 @@
-import { getAuthToken, FUNCTIONS_URL } from '@/lib/supabase';
+import { ensureAuth, getAuthToken, FUNCTIONS_URL } from '@/lib/supabase';
 
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -17,6 +17,7 @@ export const uploadToGitHub = async (
   const content = await fileToBase64(file);
   onProgress?.(50);
 
+  await ensureAuth();
   const token = (await getAuthToken()) ?? '';
 
   const res = await fetch(`${FUNCTIONS_URL}/upload`, {
