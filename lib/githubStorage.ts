@@ -1,4 +1,12 @@
-import { ensureAuth, supabase } from '@/lib/supabase';
+import { ensureAuth, getAuthToken, FUNCTIONS_URL } from '@/lib/supabase';
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
 export const uploadToGitHub = async (
   file: File,
@@ -6,26 +14,29 @@ export const uploadToGitHub = async (
   onProgress?: (percent: number) => void,
 ): Promise<{ url: string; path: string }> => {
   onProgress?.(10);
+  const content = await fileToBase64(file);
+  onProgress?.(50);
 
   await ensureAuth();
+  const token = (await getAuthToken()) ?? '';
 
-  const slug = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path = `${folder}/${Date.now()}_${slug}`;
+  const res = await fetch(`${FUNCTIONS_URL}/upload`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ content, filename: file.name, folder }),
+  });
 
-  onProgress?.(40);
+  onProgress?.(95);
 
-  const { data, error } = await supabase.storage
-    .from('assets')
-    .upload(path, file, { cacheControl: '3600', upsert: false });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || `Upload failed (${res.status})`);
+  }
 
-  if (error) throw new Error(error.message || 'Upload failed');
-
-  onProgress?.(90);
-
-  const { data: { publicUrl } } = supabase.storage
-    .from('assets')
-    .getPublicUrl(data.path);
-
+  const data = await res.json() as { url: string; path: string };
   onProgress?.(100);
-  return { url: publicUrl, path: data.path };
+  return data;
 };
