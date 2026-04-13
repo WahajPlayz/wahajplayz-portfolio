@@ -120,11 +120,11 @@ const Header: React.FC = () => {
               className="px-4 py-2 font-orbitron font-bold text-xs tracking-widest uppercase transition-all duration-300 hover:scale-105 flex items-center gap-2"
               style={{ background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}
             >
-              {user.photoURL ? (
-                <img src={user.photoURL} alt={user.displayName || 'Profile'} className="w-5 h-5 rounded-full" />
+              {user.user_metadata?.avatar_url || user.user_metadata?.picture ? (
+                <img src={user.user_metadata?.avatar_url || user.user_metadata?.picture} alt={user.user_metadata?.full_name || user.user_metadata?.name || 'Profile'} className="w-5 h-5 rounded-full" />
               ) : (
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-cyan-500/20 text-[10px]">
-                  {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                  {(user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'U')[0].toUpperCase()}
                 </span>
               )}
               Profile
@@ -184,11 +184,11 @@ const Header: React.FC = () => {
               style={{ borderColor: 'rgba(0,212,255,0.1)' }}
               onClick={() => setMobileMenuOpen(false)}
             >
-              {user.photoURL ? (
-                <img src={user.photoURL} alt={user.displayName || 'Profile'} className="w-5 h-5 rounded-full" />
+              {user.user_metadata?.avatar_url || user.user_metadata?.picture ? (
+                <img src={user.user_metadata?.avatar_url || user.user_metadata?.picture} alt={user.user_metadata?.full_name || user.user_metadata?.name || 'Profile'} className="w-5 h-5 rounded-full" />
               ) : (
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-cyan-500/20 text-[10px]">
-                  {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                  {(user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'U')[0].toUpperCase()}
                 </span>
               )}
               Profile

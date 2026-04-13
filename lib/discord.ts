@@ -31,6 +31,8 @@ const DISCORD_OAUTH_STORAGE_KEY = 'discord_oauth_hash';
 export const parseDiscordTokenFromHash = (): { token: string; expiresAt: number } | null => {
   const rawHash = sessionStorage.getItem(DISCORD_OAUTH_STORAGE_KEY) || window.location.hash;
   if (!rawHash) return null;
+  // Discord OAuth responses always include scope=identify; Supabase/Google never do
+  if (!rawHash.includes('scope=identify')) return null;
   const params = new URLSearchParams(rawHash.replace(/^#/, ''));
   const token = params.get('access_token');
   const expiresIn = parseInt(params.get('expires_in') || '604800');

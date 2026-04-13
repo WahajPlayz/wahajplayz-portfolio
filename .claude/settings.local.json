@@ -7,7 +7,15 @@
       "mcp__playwright",
       "Bash(grep:*)",
       "Bash(node -e \"require\\('@supabase/supabase-js'\\); console.log\\('supabase ok'\\)\")",
-      "Bash(node -e \"require\\('firebase-admin'\\); console.log\\('firebase-admin ok'\\)\")"
+      "Bash(node -e \"require\\('firebase-admin'\\); console.log\\('firebase-admin ok'\\)\")",
+      "Bash(claude mcp:*)",
+      "mcp__supabase__get_project_url",
+      "mcp__supabase__list_tables",
+      "Bash(xargs cat:*)",
+      "mcp__supabase__execute_sql",
+      "mcp__supabase__get_logs",
+      "mcp__supabase__get_edge_function",
+      "mcp__supabase__deploy_edge_function"
     ]
   }
 }

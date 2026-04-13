@@ -93,7 +93,12 @@ const AppInner: React.FC = () => {
 
 const App: React.FC = () => (
   (() => {
-    if (typeof window !== 'undefined' && window.location.hash.includes('access_token=')) {
+    // Only strip Discord OAuth hash (has scope= but no provider_token=).
+    // Supabase Google OAuth hashes contain provider_token= — leave those alone so
+    // the Supabase client can read them.
+    if (typeof window !== 'undefined' &&
+        window.location.hash.includes('access_token=') &&
+        !window.location.hash.includes('provider_token=')) {
       stashDiscordOAuthHash();
       const nextUrl = `${window.location.pathname}${window.location.search}#/`;
       window.history.replaceState(null, '', nextUrl);

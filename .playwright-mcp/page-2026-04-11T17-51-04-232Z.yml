@@ -1,0 +1,4 @@
+- link "Support" [ref=e1] [cursor=pointer]:
+  - /url: /#/donate
+  - img [ref=e2]
+  - text: Support

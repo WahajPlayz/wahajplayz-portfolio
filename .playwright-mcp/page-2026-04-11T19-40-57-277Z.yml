@@ -1,0 +1,438 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - button "Membership" [ref=e6] [cursor=pointer]:
+            - img [ref=e7]
+            - generic [ref=e10]: Membership
+          - button "Store" [ref=e11] [cursor=pointer]:
+            - img [ref=e12]
+            - generic [ref=e15]: Store
+          - button "Support & Donate" [ref=e16] [cursor=pointer]:
+            - img [ref=e17]
+            - generic [ref=e19]: Support & Donate
+        - button "🇺🇸 USD" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: 🇺🇸
+          - generic [ref=e23]: USD
+          - img [ref=e24]
+      - banner [ref=e26]:
+        - generic [ref=e27]:
+          - link "WahajPlayz WAHAJPLAYZ" [ref=e28] [cursor=pointer]:
+            - /url: "#home"
+            - img "WahajPlayz" [ref=e29]
+            - generic [ref=e30]: WAHAJPLAYZ
+          - navigation "Main Navigation" [ref=e31]:
+            - link "Home" [ref=e32] [cursor=pointer]:
+              - /url: "#home"
+              - text: Home
+            - link "About" [ref=e33] [cursor=pointer]:
+              - /url: "#about"
+              - text: About
+            - link "Creations" [ref=e34] [cursor=pointer]:
+              - /url: "#creations"
+              - text: Creations
+            - link "Roadmap" [ref=e35] [cursor=pointer]:
+              - /url: "#roadmap"
+              - text: Roadmap
+            - link "Experience" [ref=e36] [cursor=pointer]:
+              - /url: "#experience"
+              - text: Experience
+            - link "Community" [ref=e37] [cursor=pointer]:
+              - /url: "#community"
+              - text: Community
+            - link "FAQ" [ref=e38] [cursor=pointer]:
+              - /url: "#faq"
+              - text: FAQ
+          - generic [ref=e39]:
+            - button "Sign In" [ref=e40] [cursor=pointer]
+            - link "JOIN DISCORD" [ref=e41] [cursor=pointer]:
+              - /url: https://discord.gg/KF9cMSZ2hW
+              - img [ref=e42]
+              - text: JOIN DISCORD
+      - main [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e50]:
+            - generic [ref=e51]: Indie Developer & Content Creator
+            - heading "BUILDING WORLDS." [level=1] [ref=e54]
+            - heading "CODING DREAMS." [level=1] [ref=e55]
+            - paragraph [ref=e56]: Indie game developer crafting high-octane experiences. Documenting the journey from concept to release.
+            - generic [ref=e57]:
+              - link [ref=e58] [cursor=pointer]:
+                - /url: https://www.youtube.com/@WahajPlayz20
+                - img [ref=e59]
+              - link [ref=e61] [cursor=pointer]:
+                - /url: https://www.tiktok.com/@wahajplayzgames
+                - img [ref=e62]
+              - link [ref=e64] [cursor=pointer]:
+                - /url: https://discord.com/invite/JMgSaKj6st
+                - img [ref=e65]
+            - generic [ref=e67]:
+              - button "VIEW PROJECTS" [ref=e68] [cursor=pointer]
+              - button "MY STORY" [ref=e69] [cursor=pointer]
+          - generic [ref=e70]:
+            - generic [ref=e71]: SCROLL
+            - img [ref=e72]
+        - generic [ref=e75]:
+          - generic [ref=e78]: // ABOUT ME
+          - generic [ref=e80]:
+            - generic [ref=e81]:
+              - heading "HI! I'M WAHAJ." [level=2] [ref=e82]
+              - generic [ref=e83]:
+                - paragraph [ref=e84]: I'm a game developer and a passionate gamer. I originally started my YouTube channel to create gaming content, but everything changed when I came across a devlog for a platformer I really enjoyed.
+                - paragraph [ref=e85]:
+                  - text: Watching how the game was built from the ground up inspired me to start my own project. That's how
+                  - strong [ref=e86]: Mecha Overdrive
+                  - text: was born—a first-person shooter I'm developing from scratch.
+                - paragraph [ref=e87]:
+                  - text: I also recently started a new project called
+                  - strong [ref=e88]: "Monde Miraculous: Kwami Create"
+                  - text: . You can see more details in my Discord server.
+              - generic [ref=e89]:
+                - generic [ref=e90]:
+                  - generic [ref=e91]: 2+
+                  - generic [ref=e92]: PROJECTS
+                - generic [ref=e93]:
+                  - generic [ref=e94]: 100+
+                  - generic [ref=e95]: HOURS CODED
+                - generic [ref=e96]:
+                  - generic [ref=e97]: ∞
+                  - generic [ref=e98]: PASSION
+              - generic [ref=e99]:
+                - generic [ref=e100]: "#Unity3D"
+                - generic [ref=e101]: "#IndieDev"
+                - generic [ref=e102]: "#ContentCreator"
+            - generic [ref=e105]:
+              - img "WahajPlayz Setup" [ref=e106]
+              - generic [ref=e108]:
+                - paragraph [ref=e109]: HEADQUARTERS
+                - paragraph [ref=e110]: Where the magic happens
+        - generic [ref=e113]:
+          - generic [ref=e116]: // COMMUNITY
+          - generic [ref=e118]:
+            - heading "JOIN THE COMMUNITY" [level=2] [ref=e119]
+            - paragraph [ref=e120]: Connect with fellow gamers, get early access to updates, and be part of the journey.
+          - generic [ref=e124]:
+            - generic [ref=e125]:
+              - img [ref=e127]
+              - generic [ref=e129]:
+                - generic [ref=e130]:
+                  - generic [ref=e131]: ···
+                  - generic [ref=e132]: MEMBERS
+                - generic [ref=e133]:
+                  - generic [ref=e136]: ···
+                  - generic [ref=e137]: ONLINE
+            - generic [ref=e138]:
+              - heading "WahajPlayz Server" [level=3] [ref=e139]
+              - list [ref=e140]:
+                - listitem [ref=e141]: Get early access to game updates & devlogs
+                - listitem [ref=e143]: Direct communication with the developer
+                - listitem [ref=e145]: Exclusive sneak peeks and behind-the-scenes
+                - listitem [ref=e147]: Community events and giveaways
+              - link "JOIN THE SERVER" [ref=e149] [cursor=pointer]:
+                - /url: https://discord.com/invite/JMgSaKj6st
+                - img [ref=e150]
+                - text: JOIN THE SERVER
+        - generic [ref=e153]:
+          - generic [ref=e156]: // DEV ROADMAP
+          - generic [ref=e158]:
+            - heading "DEVELOPMENT ROADMAP" [level=2] [ref=e159]
+            - paragraph [ref=e160]: Track the detailed progress of my projects and upcoming updates.
+          - generic [ref=e161]:
+            - generic [ref=e163]:
+              - generic [ref=e164]:
+                - img [ref=e166]
+                - heading "Mecha Overdrive" [level=3] [ref=e170]
+                - generic [ref=e173]: 57%
+              - generic [ref=e174]:
+                - generic [ref=e175]:
+                  - heading "Core Development" [level=4] [ref=e176]: Core Development
+                  - generic [ref=e178]:
+                    - generic [ref=e179]:
+                      - img [ref=e180]
+                      - generic [ref=e183]: Gray boxing
+                    - generic [ref=e184]:
+                      - img [ref=e185]
+                      - generic [ref=e188]: Modelling
+                    - generic [ref=e189]:
+                      - img [ref=e190]
+                      - generic [ref=e193]: Adding weapons
+                    - generic [ref=e194]:
+                      - img [ref=e195]
+                      - generic [ref=e198]: Animating
+                    - generic [ref=e199]:
+                      - img [ref=e200]
+                      - generic [ref=e202]: Coding it in game
+                - generic [ref=e203]:
+                  - heading "Beta Phase" [level=4] [ref=e204]: Beta Phase
+                  - generic [ref=e206]:
+                    - generic [ref=e207]:
+                      - img [ref=e208]
+                      - generic [ref=e210]: Beta testing
+                    - generic [ref=e211]:
+                      - img [ref=e212]
+                      - generic [ref=e214]: Releasing it
+            - generic [ref=e216]:
+              - generic [ref=e217]:
+                - img [ref=e219]
+                - heading "Monde Miraculous" [level=3] [ref=e224]
+                - generic [ref=e227]: 33%
+              - generic [ref=e229]:
+                - heading "Production" [level=4] [ref=e230]: Production
+                - generic [ref=e232]:
+                  - generic [ref=e233]:
+                    - img [ref=e234]
+                    - generic [ref=e237]: Models
+                  - generic [ref=e238]:
+                    - img [ref=e239]
+                    - generic [ref=e241]: Coding it in game
+                  - generic [ref=e242]:
+                    - img [ref=e243]
+                    - generic [ref=e245]: Function
+        - generic [ref=e247]:
+          - generic [ref=e250]: // PROJECTS
+          - generic [ref=e252]:
+            - heading "EXPLORE MY CREATIONS" [level=2] [ref=e253]
+            - paragraph [ref=e254]: Games, mods, and tools built with passion and code.
+          - generic [ref=e255]:
+            - generic [ref=e256]:
+              - img "Mecha Overdrive" [ref=e257]
+              - generic [ref=e260]:
+                - generic [ref=e261]:
+                  - generic [ref=e262]: First-Person Shooter
+                  - heading "Mecha Overdrive" [level=3] [ref=e263]
+                - generic [ref=e264]:
+                  - paragraph [ref=e265]: A high-octane FPS being developed from scratch. Documenting the journey from code to release.
+                  - link "Watch Devlogs" [ref=e266] [cursor=pointer]:
+                    - /url: https://www.youtube.com/@WahajPlayz20
+                    - img [ref=e267]
+                    - text: Watch Devlogs
+            - generic [ref=e269]:
+              - img "Monde Miraculous" [ref=e270]
+              - generic [ref=e273]:
+                - generic [ref=e274]:
+                  - generic [ref=e275]: Modding Project
+                  - heading "Monde Miraculous" [level=3] [ref=e276]
+                - generic [ref=e277]:
+                  - paragraph [ref=e278]: A revolutionary project integrating Create Mod tech with custom Miraculous powers.
+                  - link "Join Discord" [ref=e279] [cursor=pointer]:
+                    - /url: https://discord.com/invite/JMgSaKj6st
+                    - img [ref=e280]
+                    - text: Join Discord
+        - generic [ref=e283]:
+          - generic [ref=e286]: // SKILLS
+          - generic [ref=e288]:
+            - heading "EXPERIENCE & SKILLS" [level=2] [ref=e289]
+            - paragraph [ref=e290]: The tools and technologies I use to bring ideas to life.
+          - generic [ref=e291]:
+            - generic [ref=e292]:
+              - img [ref=e294]
+              - heading "Game Development" [level=3] [ref=e297]
+              - paragraph [ref=e298]: Unity Engine, C# Programming, Level Design
+            - generic [ref=e299]:
+              - img [ref=e301]
+              - heading "Content Creation" [level=3] [ref=e304]
+              - paragraph [ref=e305]: Video Editing, Devlog Production
+            - generic [ref=e306]:
+              - img [ref=e308]
+              - heading "Community" [level=3] [ref=e313]
+              - paragraph [ref=e314]: Discord Management, Audience Engagement
+            - generic [ref=e315]:
+              - img [ref=e317]
+              - heading "Project Management" [level=3] [ref=e319]
+              - paragraph [ref=e320]: Solo development & Agile workflows
+          - generic [ref=e321]:
+            - heading "// CURRENT FOCUS" [level=3] [ref=e322]
+            - generic [ref=e323]:
+              - generic [ref=e324]:
+                - heading "Developing Mecha Overdrive" [level=4] [ref=e327]
+                - paragraph [ref=e328]: Active development of core mechanics, enemy AI, and level design. Weekly updates on YouTube.
+              - generic [ref=e329]:
+                - heading "Monde Miraculous Expansion" [level=4] [ref=e332]
+                - paragraph [ref=e333]: Integrating Create Mod features and community suggestions.
+        - generic [ref=e335]:
+          - generic [ref=e338]: // FAQ
+          - heading "FREQUENTLY ASKED QUESTIONS" [level=2] [ref=e340]
+          - generic [ref=e342]:
+            - button "What engine do you use for Mecha Overdrive?" [ref=e343] [cursor=pointer]:
+              - generic [ref=e344]: What engine do you use for Mecha Overdrive?
+              - img [ref=e345]
+            - generic [ref=e347]: I primarily use the Unity Engine for my development projects, utilizing C# for all gameplay programming and systems.
+        - generic [ref=e349]:
+          - generic [ref=e350]:
+            - paragraph [ref=e351]: Support The Build
+            - heading "KEEP THE PROJECT MOVING" [level=2] [ref=e352]
+            - paragraph [ref=e353]: "The homepage support block now matches the full donate page: same funding language, same direct support panel, and the same checkout expectations."
+          - generic [ref=e356]:
+            - generic [ref=e357]:
+              - generic [ref=e358]:
+                - paragraph [ref=e359]: Monthly Goal
+                - paragraph [ref=e360]: Help keep this going — every bit counts.
+              - generic [ref=e361]:
+                - paragraph [ref=e362]:
+                  - text: $340.00
+                  - generic [ref=e363]: / $500.00
+                - paragraph [ref=e364]: 68% funded
+            - generic [ref=e367]:
+              - generic [ref=e368]:
+                - generic [ref=e369]: ✅
+                - generic [ref=e370]: $100.00
+                - generic [ref=e371]: — Hosting covered
+              - generic [ref=e372]:
+                - generic [ref=e373]: ✅
+                - generic [ref=e374]: $250.00
+                - generic [ref=e375]: — New equipment
+              - generic [ref=e376]:
+                - generic [ref=e377]: ✨
+                - generic [ref=e378]: $500.00
+                - generic [ref=e379]: — Full-time creation
+          - generic [ref=e382]:
+            - generic [ref=e383]:
+              - paragraph [ref=e384]: Direct Support
+              - heading "Buy Me a Coffee ☕" [level=3] [ref=e385]
+              - paragraph [ref=e386]: No pressure. Every bit helps keep this going.
+              - generic [ref=e387]:
+                - generic [ref=e388]:
+                  - img [ref=e390]
+                  - paragraph [ref=e393]: Fuel Development
+                  - paragraph [ref=e394]: Support new features, prototypes, polish, and the time needed to keep building.
+                - generic [ref=e395]:
+                  - img [ref=e397]
+                  - paragraph [ref=e400]: Leave A Note
+                  - paragraph [ref=e401]: Add an optional message so support feels personal instead of anonymous.
+                - generic [ref=e402]:
+                  - img [ref=e404]
+                  - paragraph [ref=e408]: Stripe Checkout
+                  - paragraph [ref=e409]: Checkout now uses dynamic Stripe sessions in the real payment currency.
+              - generic [ref=e410]:
+                - paragraph [ref=e411]: Selected Support
+                - generic [ref=e413]:
+                  - paragraph [ref=e414]: Choose an amount
+                  - paragraph [ref=e415]: Checkout will charge in USD for this session.
+            - generic [ref=e416]:
+              - generic [ref=e417]:
+                - paragraph [ref=e418]: Quick Tip
+                - heading "Pick an amount and go." [level=4] [ref=e419]
+                - paragraph [ref=e420]: Preset amounts are converted from the base support amounts into your selected checkout currency.
+              - generic [ref=e421]:
+                - button "$3.00 One-time support" [ref=e422] [cursor=pointer]:
+                  - generic [ref=e423]: $3.00
+                  - generic [ref=e424]: One-time support
+                - button "$5.00 One-time support" [ref=e425] [cursor=pointer]:
+                  - generic [ref=e426]: $5.00
+                  - generic [ref=e427]: One-time support
+                - button "$10.00 One-time support" [ref=e428] [cursor=pointer]:
+                  - generic [ref=e429]: $10.00
+                  - generic [ref=e430]: One-time support
+                - button "$25.00 One-time support" [ref=e431] [cursor=pointer]:
+                  - generic [ref=e432]: $25.00
+                  - generic [ref=e433]: One-time support
+              - generic [ref=e434]:
+                - generic [ref=e435]: USD
+                - spinbutton [ref=e436]
+              - textbox "Display name on Supporter Wall (optional)" [ref=e437]
+              - textbox "Leave a message (optional)" [ref=e438]
+              - button "Select An Amount" [disabled] [ref=e439]:
+                - img [ref=e440]
+                - text: Select An Amount
+              - paragraph [ref=e442]: Checkout opens in Stripe without requiring a site login for one-time donations.
+          - generic [ref=e444]:
+            - paragraph [ref=e445]: Membership
+            - heading "Prefer recurring support?" [level=3] [ref=e446]
+            - paragraph [ref=e447]: Membership stays directly underneath the one-time support card so the whole support area feels unified.
+        - generic [ref=e451]:
+          - generic [ref=e452]:
+            - paragraph [ref=e453]: // LATEST UPDATES
+            - heading "POSTS & DEVLOGS" [level=2] [ref=e454]
+          - generic [ref=e455]:
+            - generic [ref=e456] [cursor=pointer]:
+              - generic [ref=e457]:
+                - generic [ref=e458]:
+                  - img [ref=e459]
+                  - generic [ref=e461]: public
+                  - generic [ref=e462]: "#welcome"
+                  - generic [ref=e463]: "#announcement"
+                - generic [ref=e464]: 18/03/2025
+              - heading "Welcome to the Community!" [level=3] [ref=e465]
+              - paragraph [ref=e466]: Thanks for being here. Here's what to expect from this space and what's coming next.
+            - generic [ref=e467] [cursor=pointer]:
+              - generic [ref=e468]:
+                - img [ref=e469]
+                - generic [ref=e472]: Members only
+                - button "Join to unlock" [ref=e473]:
+                  - img [ref=e474]
+                  - text: Join to unlock
+              - generic [ref=e477]:
+                - generic [ref=e478]:
+                  - generic [ref=e479]: members
+                  - generic [ref=e480]: "#devlog"
+                  - generic [ref=e481]: "#mecha-overdrive"
+                - generic [ref=e482]: 20/03/2025
+              - 'heading "Mecha Overdrive — Dev Update #1" [level=3] [ref=e483]'
+              - paragraph [ref=e484]: First major update on core mechanics, combat systems, and what's coming next for Mecha Overdrive.
+          - link "View All Posts" [ref=e486] [cursor=pointer]:
+            - /url: "#/posts"
+            - text: View All Posts
+            - img [ref=e487]
+      - contentinfo [ref=e489]:
+        - generic [ref=e492]:
+          - generic [ref=e493]:
+            - generic [ref=e494]: WAHAJPLAYZ
+            - paragraph [ref=e495]: // INDIE DEVELOPER & CONTENT CREATOR
+          - navigation [ref=e496]:
+            - link "home" [ref=e497] [cursor=pointer]:
+              - /url: "#home"
+            - link "about" [ref=e498] [cursor=pointer]:
+              - /url: "#about"
+            - link "creations" [ref=e499] [cursor=pointer]:
+              - /url: "#creations"
+            - link "roadmap" [ref=e500] [cursor=pointer]:
+              - /url: "#roadmap"
+            - link "experience" [ref=e501] [cursor=pointer]:
+              - /url: "#experience"
+            - link "faq" [ref=e502] [cursor=pointer]:
+              - /url: "#faq"
+          - generic [ref=e503]:
+            - link [ref=e504] [cursor=pointer]:
+              - /url: https://www.youtube.com/@WahajPlayz20
+              - img [ref=e505]
+            - link [ref=e507] [cursor=pointer]:
+              - /url: https://www.tiktok.com/@wahajplayzgames
+              - img [ref=e508]
+            - link [ref=e510] [cursor=pointer]:
+              - /url: https://discord.com/invite/JMgSaKj6st
+              - img [ref=e511]
+          - generic [ref=e513]:
+            - button "Support" [ref=e514] [cursor=pointer]:
+              - img [ref=e515]
+              - text: Support
+            - link "Join Discord" [ref=e517] [cursor=pointer]:
+              - /url: https://discord.com/invite/JMgSaKj6st
+          - paragraph [ref=e519]:
+            - text: © 2026 WAHAJPLAYZ. ALL RIGHTS RESERVED.
+            - generic [ref=e520]: BUILT WITH REACT + TAILWIND + FIREBASE
+      - button "Contact me" [ref=e521] [cursor=pointer]:
+        - img [ref=e522]
+        - text: Contact
+    - complementary [ref=e524]:
+      - generic [ref=e525]:
+        - generic [ref=e526]:
+          - generic [ref=e527]:
+            - paragraph [ref=e528]: Your Cart
+            - heading "0 items" [level=2] [ref=e529]
+          - button [ref=e530] [cursor=pointer]:
+            - img [ref=e531]
+        - generic [ref=e535]:
+          - img [ref=e536]
+          - paragraph [ref=e539]: Your cart is empty
+          - paragraph [ref=e540]: Add something from the product page and it will appear here.
+        - generic [ref=e541]:
+          - generic [ref=e542]:
+            - generic [ref=e543]: Subtotal
+            - generic [ref=e544]: $0.00
+          - button "Continue Shopping" [ref=e545] [cursor=pointer]
+          - button "Preparing Sign-In..." [disabled] [ref=e546]
+  - link "Support" [ref=e547] [cursor=pointer]:
+    - /url: /#/donate
+    - img [ref=e548]
+    - text: Support

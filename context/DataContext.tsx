@@ -457,7 +457,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Roadmap helpers
   const saveRoadmap = (updated: RoadmapProject[]) => {
     setRoadmapProjects(updated);
-    supabase.from('roadmap_config').update({ projects: updated }).eq('id', 1).catch(console.error);
+    (async () => {
+      await ensureAuth();
+      const { error } = await supabase.from('roadmap_config').update({ projects: updated }).eq('id', 1);
+      if (error) console.error('saveRoadmap failed:', error);
+    })();
   };
 
   // FAQ

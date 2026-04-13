@@ -1,5 +1,3 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -21,18 +19,6 @@ Deno.serve(async (req) => {
   const GITHUB_OWNER = Deno.env.get('GITHUB_STORAGE_OWNER');
   const GITHUB_REPO = Deno.env.get('GITHUB_STORAGE_REPO');
   const BRANCH = 'main';
-
-  const admin = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
-
-  // Verify token
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader?.startsWith('Bearer ')) return json({ error: 'Unauthorized.' }, 401);
-  const token = authHeader.slice(7).trim();
-  const { data: { user }, error: authErr } = await admin.auth.getUser(token);
-  if (authErr || !user) return json({ error: 'Unauthorized.' }, 401);
 
   if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
     return json({ error: 'GitHub storage not configured on server.' }, 500);

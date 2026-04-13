@@ -158,12 +158,23 @@ const ProfilePage: React.FC = () => {
             </>
           ) : (
             <>
-              <p className="text-gray-500 text-xs mb-4">No active membership. Join to unlock exclusive content and support the mission.</p>
-              <a href="#/posts"
-                className="inline-flex items-center gap-2 px-4 py-2 font-orbitron text-xs tracking-widest uppercase transition-all hover:scale-105"
-                style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.4)', color: '#a855f7' }}>
-                <Newspaper size={14} /> View Posts
-              </a>
+              <div className="rounded-xl border border-purple-500/20 bg-black/20 p-4 mb-4">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Current Access</p>
+                <p className="font-orbitron text-white text-lg">Free Supporter</p>
+                <p className="text-gray-400 text-xs mt-1">Upgrade to unlock exclusive member content and support the mission.</p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <a href="#/membership"
+                  className="inline-flex items-center gap-2 px-4 py-2 font-orbitron text-xs tracking-widest uppercase transition-all hover:scale-105"
+                  style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.4)', color: '#a855f7' }}>
+                  Upgrade Membership
+                </a>
+                <a href="#/posts"
+                  className="inline-flex items-center gap-2 px-4 py-2 font-orbitron text-xs tracking-widest uppercase transition-all hover:scale-105"
+                  style={{ background: 'rgba(0,212,255,0.12)', border: '1px solid rgba(0,212,255,0.35)', color: '#00d4ff' }}>
+                  <Newspaper size={14} /> View Posts
+                </a>
+              </div>
             </>
           )}
         </div>
