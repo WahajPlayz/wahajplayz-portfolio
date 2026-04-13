@@ -141,6 +141,75 @@
       ::-webkit-scrollbar-track { background: #0d0e12; }
       ::-webkit-scrollbar-thumb { background: linear-gradient(#00d4ff, #a855f7); border-radius: 3px; }
       ::-webkit-scrollbar-thumb:hover { background: linear-gradient(#00d4ff, #ec4899); }
+
+      /* ── Loading Screen ── */
+      @keyframes logo-pulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(0,212,255,0.5), 0 0 50px rgba(0,212,255,0.2); }
+        50%       { transform: scale(1.06); box-shadow: 0 0 35px rgba(0,212,255,0.8), 0 0 80px rgba(0,212,255,0.35); }
+      }
+      @keyframes dot-blink {
+        0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+        40%            { opacity: 1;   transform: scale(1); }
+      }
+      @keyframes fade-out-overlay {
+        from { opacity: 1; }
+        to   { opacity: 0; }
+      }
+      #loading-screen {
+        position: fixed;
+        inset: 0;
+        background: #0d0e12;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        gap: 0;
+      }
+      #loading-screen.fade-out {
+        animation: fade-out-overlay 0.5s ease forwards;
+        pointer-events: none;
+      }
+      #loading-logo {
+        width: 96px;
+        height: 96px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid rgba(0,212,255,0.5);
+        animation: logo-pulse 2s ease-in-out infinite;
+      }
+      .loading-label {
+        margin-top: 28px;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.25em;
+        color: rgba(0,212,255,0.7);
+        text-transform: uppercase;
+      }
+      .loading-page {
+        margin-top: 8px;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 22px;
+        font-weight: 900;
+        color: #ffffff;
+        text-shadow: 0 0 12px rgba(0,212,255,0.7), 0 0 30px rgba(0,212,255,0.3);
+        letter-spacing: 0.05em;
+      }
+      .loading-dots {
+        display: flex;
+        gap: 6px;
+        margin-top: 24px;
+      }
+      .loading-dots span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #00d4ff;
+        animation: dot-blink 1.2s ease-in-out infinite;
+      }
+      .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+      .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
     </style>
 
 <link rel="stylesheet" href="/index.css">
@@ -154,9 +223,40 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/assets/index-s5Rbtox2.js"></script>
+  <script type="module" crossorigin src="/assets/index-BLverIGX.js"></script>
 </head>
   <body>
+    <div id="loading-screen">
+      <img
+        id="loading-logo"
+        src="https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg"
+        alt="WahajPlayz"
+      />
+      <p class="loading-label">Loading up</p>
+      <p class="loading-page" id="loading-page-name">Website</p>
+      <div class="loading-dots"><span></span><span></span><span></span></div>
+    </div>
+    <script>
+      window.__loadStart = Date.now();
+      (function () {
+        var hash = window.location.hash.replace(/^#\/?/, '');
+        var pageNames = {
+          '': 'Website',
+          'posts': 'Posts',
+          'profile': 'Profile',
+          'membership': 'Membership',
+          'donate': 'Donation',
+          'donate/success': 'Donation',
+          'store': 'Store',
+          'download': 'Download',
+          'messages': 'Messages'
+        };
+        var name = pageNames[hash] !== undefined
+          ? pageNames[hash]
+          : hash.startsWith('store/') ? 'Store' : 'Website';
+        document.getElementById('loading-page-name').textContent = name;
+      })();
+    </script>
     <div id="root"></div>
 </body>
 <style>
