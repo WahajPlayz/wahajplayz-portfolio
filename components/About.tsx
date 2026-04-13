@@ -58,6 +58,7 @@ const About: React.FC = () => {
     const newCount = ownerClickCount + 1;
     setOwnerClickCount(newCount);
     if (newCount === 20) {
+      localStorage.removeItem('wahaj_owner_verified');
       openAdmin();
       setOwnerClickCount(0);
     }

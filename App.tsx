@@ -40,11 +40,53 @@ const MessagesPage = lazy(() => import('./pages/Messages'));
 // Konami code: ↑↑↓↓←→←→ba — secret owner panel access
 const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
 
-const RouteLoader: React.FC = () => (
-  <div className="min-h-screen flex items-center justify-center text-gray-500 font-mono text-sm" style={{ backgroundColor: '#0d0e12' }}>
-    Loading...
-  </div>
-);
+const LOGO_URL = 'https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg';
+const PAGE_NAMES: Record<string, string> = {
+  '': 'Website',
+  'posts': 'Posts',
+  'profile': 'Profile',
+  'membership': 'Membership',
+  'donate': 'Donation',
+  'donate/success': 'Donation',
+  'store': 'Store',
+  'download': 'Download',
+  'messages': 'Messages',
+};
+
+const RouteLoader: React.FC = () => {
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  const name = PAGE_NAMES[hash] !== undefined
+    ? PAGE_NAMES[hash]
+    : hash.startsWith('store/') ? 'Store' : 'Website';
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, backgroundColor: '#0d0e12',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      zIndex: 10000,
+    }}>
+      <img
+        src={LOGO_URL}
+        alt="WahajPlayz"
+        style={{
+          width: 96, height: 96, borderRadius: '50%', objectFit: 'cover',
+          border: '2px solid rgba(0,212,255,0.5)',
+          boxShadow: '0 0 24px rgba(0,212,255,0.6), 0 0 60px rgba(0,212,255,0.25)',
+        }}
+      />
+      <p style={{
+        marginTop: 28, fontFamily: 'Orbitron, sans-serif', fontSize: 10,
+        fontWeight: 700, letterSpacing: '0.25em', color: 'rgba(0,212,255,0.7)',
+        textTransform: 'uppercase',
+      }}>Loading up</p>
+      <p style={{
+        marginTop: 8, fontFamily: 'Orbitron, sans-serif', fontSize: 22,
+        fontWeight: 900, color: '#ffffff',
+        textShadow: '0 0 12px rgba(0,212,255,0.7), 0 0 30px rgba(0,212,255,0.3)',
+        letterSpacing: '0.05em',
+      }}>{name}</p>
+    </div>
+  );
+};
 
 const AppInner: React.FC = () => {
   const { openMemberPanel, isAdminOpen, isMemberPanelOpen } = useData();
