@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart } from 'lucide-react';
+import { Heart, Brush } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const socialLinks = [
@@ -59,6 +59,13 @@ const Footer: React.FC = () => {
               style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.4)', color: '#a855f7', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}>
               <Heart size={14} fill="currentColor" />
               Support
+            </button>
+            <button
+              onClick={() => navigate('/commissions')}
+              className="flex items-center gap-2 px-6 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105"
+              style={{ background: 'rgba(236,72,153,0.1)', border: '1px solid rgba(236,72,153,0.4)', color: '#ec4899', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}>
+              <Brush size={14} />
+              Commissions
             </button>
             <a href="https://discord.com/invite/JMgSaKj6st" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-2 px-6 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105"

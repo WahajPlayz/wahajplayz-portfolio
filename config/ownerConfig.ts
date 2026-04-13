@@ -29,6 +29,24 @@ export interface Tier {
   benefits: Benefit[]; lifetimeExtraBenefits: Benefit[];
   storeDiscountPercent?: number;
 }
+export interface CommissionService {
+  id: string;
+  title: string;
+  price: string;
+  basePrice: number;   // GBP amount for Stripe; 0 = inquiry only (no payment)
+  description: string;
+  sampleImages: string[];
+  available: boolean;
+}
+
+export interface CommissionsConfig {
+  isOpen: boolean;
+  heading: string;
+  subheading: string;
+  services: CommissionService[];
+  portfolioImages: string[];
+}
+
 export interface AdminPermissions {
   roadmap: boolean;
   faq: boolean;
@@ -39,11 +57,20 @@ export interface AdminPermissions {
   posts: boolean;
   donation: boolean;
   store: boolean;
+  commissions: boolean;
 }
 
 export const defaultAdminPermissions: AdminPermissions = {
   roadmap: true, faq: true, members: true, requests: true,
-  goal: true, membership: true, posts: true, donation: true, store: true,
+  goal: true, membership: true, posts: true, donation: true, store: true, commissions: true,
+};
+
+export const defaultCommissionsConfig: CommissionsConfig = {
+  isOpen: true,
+  heading: 'Commission a Service',
+  subheading: 'Pick a service below and describe what you need. I\'ll get back to you as soon as possible.',
+  services: [],
+  portfolioImages: [],
 };
 
 export interface OwnerConfig {
@@ -62,6 +89,7 @@ export interface OwnerConfig {
   membershipPage: { headline: string; subheading: string; };
   donatePage: { headline: string; subheading: string; };
   adminPermissions: AdminPermissions;
+  commissionsConfig: CommissionsConfig;
 }
 
 export const ownerConfig: OwnerConfig = {
@@ -200,4 +228,5 @@ export const ownerConfig: OwnerConfig = {
     subheading: 'Every donation, big or small, keeps development alive and helps me create more.',
   },
   adminPermissions: defaultAdminPermissions,
+  commissionsConfig: defaultCommissionsConfig,
 };

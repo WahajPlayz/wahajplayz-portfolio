@@ -124,15 +124,24 @@ export default async function handler(req, res) {
 
     const stripe = getStripe();
     const origin = getAppUrl();
+    const hasPhysical = cartItems.some(item => item.product.type === 'physical');
+    const firstDigitalId = cartItems.find(item => item.product.type === 'digital')?.product.id;
+    const success_url = hasPhysical
+      ? `${origin}/#/store/success?session_id={CHECKOUT_SESSION_ID}`
+      : `${origin}/#/download?product=${firstDigitalId}&session_id={CHECKOUT_SESSION_ID}`;
     const sessionConfig = {
       mode: 'payment',
       client_reference_id: decodedToken.uid,
-      success_url: `${origin}/#/store?checkout=success`,
+      success_url,
       cancel_url: `${origin}/#/store?checkout=cancel`,
       metadata: {
         kind: 'store',
         uid: decodedToken.uid,
         productIds: JSON.stringify(cartItems.map(item => item.product.id)),
+        productNames: JSON.stringify(cartItems.map(item => item.product.name)),
+        variantLabels: JSON.stringify(cartItems.map(item => item.variantLabel || '')),
+        quantities: JSON.stringify(cartItems.map(item => item.quantity)),
+        hasPhysical: hasPhysical ? 'true' : 'false',
       },
       line_items: await Promise.all(cartItems.map(async ({ product, quantity, variantLabel }) => {
         const salePrice = applyDiscount(product.price, product.salePercent || 0);

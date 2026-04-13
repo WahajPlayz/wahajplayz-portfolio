@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 
 const HEADER_LOGO_URL = 'https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg';
@@ -33,6 +34,7 @@ const navLinks = [
 
 const Header: React.FC = () => {
   const { user, openAuthModal } = useAuth();
+  const navigate = useNavigate();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoSrc, setLogoSrc] = useState(HEADER_LOGO_URL);
@@ -80,7 +82,7 @@ const Header: React.FC = () => {
       }`}
       style={isScrolled ? { background: 'rgba(0,0,0,0.85)', borderBottom: '1px solid rgba(0,212,255,0.15)' } : {}}
     >
-      <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-6 grid grid-cols-[auto_1fr_auto] items-center gap-6">
         {/* Logo */}
         <a
           href="#home"
@@ -98,7 +100,7 @@ const Header: React.FC = () => {
         </a>
 
         {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center space-x-6" aria-label="Main Navigation">
+        <nav className="hidden md:flex items-center justify-center space-x-5" aria-label="Main Navigation">
           {navLinks.map((link) => (
             <a
               key={link.name}
@@ -114,6 +116,13 @@ const Header: React.FC = () => {
 
         {/* Account / CTA */}
         <div className="hidden md:flex items-center gap-3">
+          <button
+            onClick={() => navigate('/commissions')}
+            className="px-4 py-2 font-orbitron font-bold text-xs tracking-widest uppercase transition-all duration-300 hover:scale-105"
+            style={{ background: 'rgba(236,72,153,0.1)', border: '1px solid rgba(236,72,153,0.4)', color: '#ec4899', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}
+          >
+            Commissions
+          </button>
           {user ? (
             <a
               href="#/profile"
@@ -177,6 +186,13 @@ const Header: React.FC = () => {
               {link.name}
             </a>
           ))}
+          <button
+            onClick={() => { setMobileMenuOpen(false); navigate('/commissions'); }}
+            className="text-left font-orbitron text-xs tracking-widest uppercase py-3 border-b transition-colors"
+            style={{ borderColor: 'rgba(236,72,153,0.15)', color: '#ec4899' }}
+          >
+            Commissions
+          </button>
           {user ? (
             <a
               href="#/profile"

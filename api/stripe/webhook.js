@@ -2,7 +2,7 @@ import { applyCors, handleOptions } from '../_lib/cors.js';
 import { getDb } from '../_lib/admin.js';
 import { getStripe, convertToBaseCurrency } from '../_lib/stripe.js';
 import { readRawBody, sendError } from '../_lib/http.js';
-import { getStoreProduct, recordTransaction, grantDigitalPurchase } from '../_lib/data.js';
+import { getStoreProduct, recordTransaction, grantDigitalPurchase, recordPhysicalOrder } from '../_lib/data.js';
 
 export const config = {
   api: {
@@ -96,6 +96,32 @@ export default async function handler(req, res) {
             }
           }
         }
+
+        if (session.metadata?.hasPhysical === 'true') {
+          const productNames = (() => { try { return JSON.parse(session.metadata?.productNames || '[]'); } catch { return []; } })();
+          const variantLabels = (() => { try { return JSON.parse(session.metadata?.variantLabels || '[]'); } catch { return []; } })();
+          const quantities = (() => { try { return JSON.parse(session.metadata?.quantities || '[]'); } catch { return []; } })();
+          await recordPhysicalOrder(session, { product_ids: productIds, product_names: productNames, variant_labels: variantLabels, quantities });
+        }
+      }
+
+      if (kind === 'commission') {
+        const service = session.metadata?.service || '';
+        const description = session.metadata?.description || '';
+        const contact = session.metadata?.contact || '';
+        const { convertToBaseCurrency } = await import('../_lib/stripe.js');
+        const amountGBP = await convertToBaseCurrency(session.amount_total || 0, session.currency || 'GBP');
+
+        await getDb().from('commission_requests').insert({
+          service,
+          description,
+          contact,
+          status: 'paid',
+          stripe_session_id: session.id,
+          amount_gbp: amountGBP,
+          created_at: new Date().toISOString(),
+          read: false,
+        });
       }
 
       if (kind === 'membership') {

@@ -75,6 +75,20 @@ export const startDonationCheckout = async (amount: number, currency: string, me
   redirectToStripe(data.url);
 };
 
+export const startCommissionCheckout = async (
+  serviceName: string,
+  basePrice: number,
+  currency: string,
+  description: string,
+  contact: string,
+) => {
+  const returnOrigin = window.location.origin;
+  const data = await postJson<{ url?: string }>('/api/stripe/create-commission-session', {
+    serviceName, basePrice, currency, description, contact, returnOrigin,
+  });
+  redirectToStripe(data.url);
+};
+
 export const startMembershipCheckout = async (tierId: string, billing: 'monthly' | 'yearly' | 'lifetime', currency: string) => {
   const data = await postJson<{ url?: string }>('/api/stripe/create-membership-session', { tierId, billing, currency }, true);
   redirectToStripe(data.url);
@@ -93,4 +107,18 @@ export const verifyDigitalCheckout = async (sessionId: string) => {
 
 export const fetchDigitalDownloadUrl = async (productId: string) => {
   return postJson<{ url: string }>('/api/stripe/download-url', { productId }, true);
+};
+
+export const fetchOrderSummary = async (sessionId: string) => {
+  return postJson<{
+    orderId: string;
+    customerName: string;
+    customerEmail: string;
+    shippingName: string;
+    shippingAddress: { line1: string; line2: string; city: string; state: string; postalCode: string; country: string } | null;
+    products: { id: string; name: string; variant: string; quantity: number }[];
+    amountTotal: number;
+    currency: string;
+    createdAt: string;
+  }>('/api/stripe/order-summary', { sessionId });
 };

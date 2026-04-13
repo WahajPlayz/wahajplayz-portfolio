@@ -93,7 +93,7 @@ const moveInArray = (ids: string[], id: string, direction: 'up' | 'down') => {
 const buildAvatarUrl = (discordId: string, avatar: string | null) =>
   avatar ? `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.png?size=128` : null;
 const OWNER_SESSION_KEY = 'wahaj_owner_verified';
-const permissionOrder: (keyof AdminPermissions)[] = ['roadmap', 'faq', 'members', 'requests', 'goal', 'membership', 'posts', 'donation', 'store'];
+const permissionOrder: (keyof AdminPermissions)[] = ['roadmap', 'faq', 'members', 'requests', 'goal', 'membership', 'posts', 'donation', 'store', 'commissions'];
 const permissionLabels: Record<keyof AdminPermissions, { title: string; description: string }> = {
   roadmap: { title: 'Roadmap & Projects', description: 'Edit roadmap projects, sections, and task progress.' },
   faq: { title: 'FAQ Manager', description: 'Create and remove FAQ entries.' },
@@ -104,6 +104,7 @@ const permissionLabels: Record<keyof AdminPermissions, { title: string; descript
   posts: { title: 'Posts', description: 'Create, edit, and publish member or public posts.' },
   donation: { title: 'Donations', description: 'Manage donation settings and donate page content.' },
   store: { title: 'Store', description: 'Manage storefront products and digital delivery assets.' },
+  commissions: { title: 'Commissions', description: 'Manage commission services, requests, and portfolio gallery.' },
 };
 
 const AdminPanel: React.FC = () => {
@@ -143,7 +144,7 @@ const AdminPanel: React.FC = () => {
     removeUser,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'goal' | 'membership' | 'posts' | 'donation' | 'store' | 'orders' | 'permissions'>('roadmap');
+  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'goal' | 'membership' | 'posts' | 'donation' | 'store' | 'commissions' | 'orders' | 'permissions'>('roadmap');
   const [newFaqQ, setNewFaqQ] = useState('');
   const [newFaqA, setNewFaqA] = useState('');
   const [newProjTitle, setNewProjTitle] = useState('');
@@ -183,7 +184,7 @@ const AdminPanel: React.FC = () => {
   };
 
   // Support data
-  const { config, saveMembership, savePosts, saveGoals, saveDonation, savePageContent, saveAdminPermissions } = useSupportData();
+  const { config, saveMembership, savePosts, saveGoals, saveDonation, savePageContent, saveAdminPermissions, saveCommissions } = useSupportData();
   const [approveAdminPermissions, setApproveAdminPermissions] = useState<AdminPermissions>(config.adminPermissions);
 
   // Store data
@@ -259,13 +260,41 @@ const AdminPanel: React.FC = () => {
   const [contactMsgs, setContactMsgs] = useState<{id:string;name:string;email:string;subject:string;message:string;createdAt:number;read:boolean}[]>([]);
   const [contactLoading, setContactLoading] = useState(false);
   const [activeContactMsg, setActiveContactMsg] = useState<typeof contactMsgs[0]|null>(null);
-  const [ordersSubTab, setOrdersSubTab] = useState<'orders'|'contact'>('orders');
+  const [ordersSubTab, setOrdersSubTab] = useState<'orders'|'contact'|'physical'>('orders');
+  const [physicalOrders, setPhysicalOrders] = useState<{
+    id: string; uid: string; customer_name: string; customer_email: string;
+    shipping_name: string; shipping_line1: string; shipping_line2: string;
+    shipping_city: string; shipping_state: string; shipping_postal_code: string; shipping_country: string;
+    product_ids: string[]; product_names: string[]; variant_labels: string[]; quantities: number[];
+    amount_total: number; currency: string; status: string; created_at: string;
+  }[]>([]);
+  const [physicalOrdersLoading, setPhysicalOrdersLoading] = useState(false);
+  // Commissions state
+  const [commissionsSubTab, setCommissionsSubTab] = useState<'manage'|'requests'>('manage');
+  const [commissionsDraft, setCommissionsDraft] = useState<typeof config.commissionsConfig | null>(null);
+  const [commissionsUploadStatus, setCommissionsUploadStatus] = useState<Record<string, string>>({});
+  const [commissionsSaving, setCommissionsSaving] = useState(false);
+  const [commissionRequests, setCommissionRequests] = useState<{id:string;service:string;description:string;contact:string;created_at:string;read:boolean}[]>([]);
+  const [commissionRequestsLoading, setCommissionRequestsLoading] = useState(false);
+
   // Donor conversations state
   const [donorConvos, setDonorConvos] = useState<{id:string;transactionId:string;donorName:string;donorEmail:string|null;amountGBP:number;message:string;createdAt:number;replied:boolean;lastReplyAt:number|null}[]>([]);
   const [donorConvosLoading, setDonorConvosLoading] = useState(false);
   const [expandedDonorId, setExpandedDonorId] = useState<string|null>(null);
   const [donorReplyText, setDonorReplyText] = useState<Record<string,string>>({});
   const [donorReplying, setDonorReplying] = useState<string|null>(null);
+
+  const loadPhysicalOrders = async () => {
+    setPhysicalOrdersLoading(true);
+    const { data } = await supabase.from('physical_orders').select('*').order('created_at', { ascending: false }).limit(200);
+    setPhysicalOrders(data ?? []);
+    setPhysicalOrdersLoading(false);
+  };
+
+  const updateOrderStatus = async (id: string, status: string) => {
+    await supabase.from('physical_orders').update({ status }).eq('id', id);
+    setPhysicalOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+  };
 
   const loadAdminConvs = async () => {
     setAdminConvsLoading(true);
@@ -327,6 +356,25 @@ const AdminPanel: React.FC = () => {
     try {
       await supabase.from('contact_messages').update({ read: true }).eq('id', msg.id);
       setContactMsgs(m => m.map(x => x.id === msg.id ? { ...x, read: true } : x));
+    } catch { /* ignore */ }
+  };
+
+  const loadCommissionRequests = async () => {
+    setCommissionRequestsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('commission_requests')
+        .select('*')
+        .order('created_at', { ascending: false });
+      setCommissionRequests((data || []) as any[]);
+    } finally { setCommissionRequestsLoading(false); }
+  };
+
+  const markCommissionRead = async (req: typeof commissionRequests[0]) => {
+    if (req.read) return;
+    try {
+      await supabase.from('commission_requests').update({ read: true }).eq('id', req.id);
+      setCommissionRequests(r => r.map(x => x.id === req.id ? { ...x, read: true } : x));
     } catch { /* ignore */ }
   };
 
@@ -622,9 +670,20 @@ const AdminPanel: React.FC = () => {
                       <ShoppingBag size={14} />Store
                     </button>
                   )}
+                  {canAccessTab('commissions') && (
+                    <button
+                      onClick={() => { setActiveTab('commissions'); if (!commissionsDraft) setCommissionsDraft(JSON.parse(JSON.stringify(config.commissionsConfig))); loadCommissionRequests(); }}
+                      className={`px-4 py-2 rounded-lg transition-colors font-medium flex items-center gap-1.5 ${activeTab === 'commissions' ? 'bg-pink-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      <Sparkles size={14} />Commissions
+                      {commissionRequests.filter(r => !r.read).length > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-pink-500 text-white text-xs font-bold flex items-center justify-center">{commissionRequests.filter(r => !r.read).length}</span>
+                      )}
+                    </button>
+                  )}
                   {isOwner && (
                     <button
-                      onClick={() => { setActiveTab('orders'); loadAdminConvs(); loadContactMsgs(); }}
+                      onClick={() => { setActiveTab('orders'); loadAdminConvs(); loadContactMsgs(); loadPhysicalOrders(); }}
                       className={`px-4 py-2 rounded-lg transition-colors font-medium flex items-center gap-1.5 ${activeTab === 'orders' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
                       <MessageSquare size={14} /> Orders & Messages
@@ -2728,18 +2787,211 @@ const AdminPanel: React.FC = () => {
               </div>
             )}
 
+            {/* ── COMMISSIONS TAB ── */}
+            {activeTab === 'commissions' && canAccessTab('commissions') && (() => {
+              const draft = commissionsDraft ?? config.commissionsConfig;
+              const blankService = () => ({ id: 'svc-' + Date.now(), title: '', price: '', basePrice: 0, description: '', sampleImages: [] as string[], available: true });
+
+              const updateDraft = (fn: (d: typeof config.commissionsConfig) => typeof config.commissionsConfig) => {
+                setCommissionsDraft(prev => fn(JSON.parse(JSON.stringify(prev ?? config.commissionsConfig))));
+              };
+
+              const handleSvcImageUpload = async (svcId: string, file: File, imgIdx: number) => {
+                const key = `${svcId}-${imgIdx}`;
+                setCommissionsUploadStatus(s => ({ ...s, [key]: 'Uploading…' }));
+                try {
+                  const compressed = await compressImage(file);
+                  const { url } = await uploadAsset(`commissions/${svcId}`, compressed);
+                  updateDraft(d => {
+                    const svc = d.services.find(s => s.id === svcId);
+                    if (svc) {
+                      const imgs = [...svc.sampleImages];
+                      imgs[imgIdx] = url;
+                      svc.sampleImages = imgs;
+                    }
+                    return d;
+                  });
+                  setCommissionsUploadStatus(s => ({ ...s, [key]: '' }));
+                } catch {
+                  setCommissionsUploadStatus(s => ({ ...s, [key]: 'Upload failed' }));
+                }
+              };
+
+              const handlePortfolioUpload = async (file: File) => {
+                setCommissionsUploadStatus(s => ({ ...s, portfolio: 'Uploading…' }));
+                try {
+                  const compressed = await compressImage(file);
+                  const { url } = await uploadAsset('commissions/portfolio', compressed);
+                  updateDraft(d => { d.portfolioImages = [...d.portfolioImages, url]; return d; });
+                  setCommissionsUploadStatus(s => ({ ...s, portfolio: '' }));
+                } catch {
+                  setCommissionsUploadStatus(s => ({ ...s, portfolio: 'Upload failed' }));
+                }
+              };
+
+              const handleSave = async () => {
+                setCommissionsSaving(true);
+                try { await saveCommissions(draft); } finally { setCommissionsSaving(false); }
+              };
+
+              const unread = commissionRequests.filter(r => !r.read).length;
+
+              return (
+                <div className="flex flex-col gap-4">
+                  {/* Sub-tabs */}
+                  <div className="flex gap-1 border-b pb-3" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
+                    <button onClick={() => setCommissionsSubTab('manage')} className={`font-orbitron font-bold text-xs px-3 py-1.5 rounded transition-colors ${commissionsSubTab === 'manage' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>Manage</button>
+                    <button onClick={() => { setCommissionsSubTab('requests'); if (commissionRequests.length === 0) loadCommissionRequests(); }} className={`font-orbitron font-bold text-xs px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 ${commissionsSubTab === 'requests' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>
+                      Requests
+                      {unread > 0 && <span className="w-4 h-4 rounded-full bg-pink-500 text-white text-[10px] font-bold flex items-center justify-center">{unread}</span>}
+                    </button>
+                    <button onClick={() => commissionsSubTab === 'requests' ? loadCommissionRequests() : undefined} className="font-mono text-xs text-gray-500 hover:text-pink-400 ml-auto transition-colors">↻ Refresh</button>
+                  </div>
+
+                  {/* ── MANAGE SUB-TAB ── */}
+                  {commissionsSubTab === 'manage' && (
+                    <div className="flex flex-col gap-6">
+                      {/* Global settings */}
+                      <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        <h3 className="font-orbitron font-bold text-sm text-white mb-4">Settings</h3>
+                        <div className="flex items-center gap-3 mb-4">
+                          <button
+                            onClick={() => updateDraft(d => { d.isOpen = !d.isOpen; return d; })}
+                            className={`relative w-11 h-6 rounded-full overflow-hidden transition-colors ${draft.isOpen ? 'bg-green-500' : 'bg-gray-700'}`}
+                          >
+                            <span className={`absolute top-1 left-0 w-4 h-4 rounded-full bg-white transition-transform ${draft.isOpen ? 'translate-x-6' : 'translate-x-1'}`} />
+                          </button>
+                          <span className="text-sm text-gray-300">{draft.isOpen ? 'Commissions Open' : 'Commissions Closed'}</span>
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          <input value={draft.heading} onChange={e => updateDraft(d => { d.heading = e.target.value; return d; })} placeholder="Page heading" className="w-full bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                          <input value={draft.subheading} onChange={e => updateDraft(d => { d.subheading = e.target.value; return d; })} placeholder="Page subheading" className="w-full bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                        </div>
+                      </div>
+
+                      {/* Services */}
+                      <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="font-orbitron font-bold text-sm text-white">Services</h3>
+                          <button onClick={() => updateDraft(d => { d.services = [...d.services, blankService()]; return d; })} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-orbitron font-bold text-pink-400 transition-colors hover:text-pink-300" style={{ border: '1px solid rgba(236,72,153,0.3)', borderRadius: 6 }}>
+                            <Plus size={12} /> Add Service
+                          </button>
+                        </div>
+                        {draft.services.length === 0 && <p className="text-gray-600 text-xs font-mono">No services yet. Add one above.</p>}
+                        <div className="flex flex-col gap-5">
+                          {draft.services.map((svc, si) => (
+                            <div key={svc.id} className="p-4 rounded-lg relative" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                              <button onClick={() => updateDraft(d => { d.services = d.services.filter((_,i) => i !== si); return d; })} className="absolute top-3 right-3 text-red-400 hover:text-red-300 transition-colors"><Trash2 size={14} /></button>
+                              <div className="grid grid-cols-2 gap-3 mb-3">
+                                <input value={svc.title} onChange={e => updateDraft(d => { d.services[si].title = e.target.value; return d; })} placeholder="Service title" className="bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                                <input value={svc.price} onChange={e => updateDraft(d => { d.services[si].price = e.target.value; return d; })} placeholder='Display price e.g. "£50+"' className="bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                              </div>
+                              <div className="mb-3">
+                                <label className="block text-xs text-gray-500 mb-1">Base price (£ GBP) for Stripe checkout</label>
+                                <input type="number" min="0" step="0.01" value={svc.basePrice ?? 0} onChange={e => updateDraft(d => { d.services[si].basePrice = parseFloat(e.target.value) || 0; return d; })} placeholder="e.g. 50" className="w-full bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                                <p className="text-xs text-gray-600 mt-1">Set to 0 to disable ordering for this service.</p>
+                              </div>
+                              <textarea value={svc.description} onChange={e => updateDraft(d => { d.services[si].description = e.target.value; return d; })} placeholder="Description" rows={2} className="w-full bg-transparent text-white text-sm p-2 rounded outline-none resize-none mb-3" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+                              <div className="flex items-center gap-2 mb-3">
+                                <button onClick={() => updateDraft(d => { d.services[si].available = !d.services[si].available; return d; })} className={`relative w-9 h-5 rounded-full overflow-hidden transition-colors ${svc.available ? 'bg-green-500' : 'bg-gray-700'}`}>
+                                  <span className={`absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white transition-transform ${svc.available ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                </button>
+                                <span className="text-xs text-gray-400">{svc.available ? 'Available' : 'Unavailable'}</span>
+                              </div>
+                              {/* Sample images */}
+                              <p className="text-xs text-gray-500 font-orbitron uppercase tracking-widest mb-2">Sample Images (up to 3)</p>
+                              <div className="flex gap-2 flex-wrap">
+                                {[0, 1, 2].map(imgIdx => (
+                                  <div key={imgIdx} className="relative w-20 h-20 rounded overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.3)' }}>
+                                    {svc.sampleImages[imgIdx] ? (
+                                      <>
+                                        <img src={svc.sampleImages[imgIdx]} className="w-full h-full object-cover" />
+                                        <button onClick={() => updateDraft(d => { const imgs = [...d.services[si].sampleImages]; imgs.splice(imgIdx, 1); d.services[si].sampleImages = imgs; return d; })} className="absolute top-0.5 right-0.5 bg-black/70 rounded text-red-400 p-0.5"><X size={10} /></button>
+                                      </>
+                                    ) : (
+                                      <label className="flex items-center justify-center w-full h-full cursor-pointer text-gray-600 hover:text-pink-400 transition-colors">
+                                        <Plus size={18} />
+                                        <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleSvcImageUpload(svc.id, f, imgIdx); e.target.value = ''; }} />
+                                      </label>
+                                    )}
+                                    {commissionsUploadStatus[`${svc.id}-${imgIdx}`] && <p className="text-[10px] text-pink-400 mt-1">{commissionsUploadStatus[`${svc.id}-${imgIdx}`]}</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Portfolio images */}
+                      <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        <h3 className="font-orbitron font-bold text-sm text-white mb-4">Portfolio Gallery</h3>
+                        <div className="flex flex-wrap gap-3 mb-3">
+                          {draft.portfolioImages.map((url, pi) => (
+                            <div key={pi} className="relative w-24 h-24 rounded overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+                              <img src={url} className="w-full h-full object-cover" />
+                              <button onClick={() => updateDraft(d => { d.portfolioImages = d.portfolioImages.filter((_,i) => i !== pi); return d; })} className="absolute top-0.5 right-0.5 bg-black/70 rounded text-red-400 p-0.5"><X size={10} /></button>
+                            </div>
+                          ))}
+                          <label className="flex items-center justify-center w-24 h-24 rounded cursor-pointer text-gray-600 hover:text-pink-400 transition-colors" style={{ border: '1px dashed rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.3)' }}>
+                            <Plus size={22} />
+                            <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handlePortfolioUpload(f); e.target.value = ''; }} />
+                          </label>
+                        </div>
+                        {commissionsUploadStatus.portfolio && <p className="text-xs text-pink-400">{commissionsUploadStatus.portfolio}</p>}
+                      </div>
+
+                      <button onClick={handleSave} disabled={commissionsSaving} className="flex items-center justify-center gap-2 w-full py-3 font-orbitron font-bold text-sm tracking-widest uppercase transition-all hover:scale-[1.01] disabled:opacity-50" style={{ background: 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.4)', color: '#ec4899', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}>
+                        <Save size={14} />{commissionsSaving ? 'Saving…' : 'Save Changes'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── REQUESTS SUB-TAB ── */}
+                  {commissionsSubTab === 'requests' && (
+                    <div className="flex flex-col gap-3">
+                      {commissionRequestsLoading && <p className="text-gray-500 text-xs font-mono text-center py-8">Loading requests…</p>}
+                      {!commissionRequestsLoading && commissionRequests.length === 0 && (
+                        <p className="text-gray-600 text-xs font-mono text-center py-8">No commission requests yet.</p>
+                      )}
+                      {commissionRequests.map(req => (
+                        <div key={req.id} onClick={() => markCommissionRead(req)} className="p-4 rounded-lg cursor-pointer transition-all" style={{ background: req.read ? 'rgba(255,255,255,0.02)' : 'rgba(236,72,153,0.05)', border: `1px solid ${req.read ? 'rgba(255,255,255,0.07)' : 'rgba(236,72,153,0.25)'}` }}>
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex items-center gap-2">
+                              {!req.read && <span className="w-2 h-2 rounded-full bg-pink-500 shrink-0" />}
+                              <span className="font-orbitron font-bold text-sm text-white">{req.service}</span>
+                            </div>
+                            <span className="text-xs text-gray-600 font-mono shrink-0">{new Date(req.created_at).toLocaleDateString()}</span>
+                          </div>
+                          <p className="text-gray-400 text-sm leading-relaxed mb-3 whitespace-pre-wrap">{req.description}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-orbitron text-gray-500 uppercase tracking-widest">Contact:</span>
+                            <span className="text-xs text-pink-400">{req.contact}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ── ORDERS & MESSAGES TAB ── */}
             {activeTab === 'orders' && isOwner && (
               <div className="h-[620px] flex flex-col gap-0" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
                 <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.3)' }}>
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 flex-wrap">
                     <button onClick={() => setOrdersSubTab('orders')} className={`font-orbitron font-bold text-xs px-3 py-1.5 transition-colors ${ordersSubTab==='orders' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>Order Msgs</button>
                     <button onClick={() => { setOrdersSubTab('contact'); if(contactMsgs.length===0) loadContactMsgs(); }} className={`font-orbitron font-bold text-xs px-3 py-1.5 transition-colors flex items-center gap-1.5 ${ordersSubTab==='contact' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>
                       Fan Messages
                       {contactMsgs.filter(m=>!m.read).length > 0 && <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{contactMsgs.filter(m=>!m.read).length}</span>}
                     </button>
+                    <button onClick={() => { setOrdersSubTab('physical'); if(physicalOrders.length===0) loadPhysicalOrders(); }} className={`font-orbitron font-bold text-xs px-3 py-1.5 transition-colors flex items-center gap-1.5 ${ordersSubTab==='physical' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>
+                      <ShoppingBag size={11} /> Physical Orders
+                      {physicalOrders.filter(o=>o.status==='pending').length > 0 && <span className="w-4 h-4 rounded-full bg-yellow-500 text-black text-[10px] font-bold flex items-center justify-center">{physicalOrders.filter(o=>o.status==='pending').length}</span>}
+                    </button>
                   </div>
-                  <button onClick={() => ordersSubTab==='orders' ? loadAdminConvs() : loadContactMsgs()} className="font-mono text-xs text-gray-500 hover:text-cyan-400 transition-colors">↻ Refresh</button>
+                  <button onClick={() => ordersSubTab==='orders' ? loadAdminConvs() : ordersSubTab==='physical' ? loadPhysicalOrders() : loadContactMsgs()} className="font-mono text-xs text-gray-500 hover:text-cyan-400 transition-colors">↻ Refresh</button>
                 </div>
                 {ordersSubTab === 'orders' && (
                 <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -2806,6 +3058,72 @@ const AdminPanel: React.FC = () => {
                 )}
 
                 {/* ── Fan Messages sub-tab ── */}
+                {/* ── Physical Orders sub-tab ── */}
+                {ordersSubTab === 'physical' && (
+                  <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                    {physicalOrdersLoading ? (
+                      <p className="font-mono text-xs text-gray-600 text-center py-8">Loading...</p>
+                    ) : physicalOrders.length === 0 ? (
+                      <p className="font-mono text-xs text-gray-600 text-center py-8">No physical orders yet.</p>
+                    ) : physicalOrders.map(order => {
+                      const shortId = order.id.slice(-8).toUpperCase();
+                      const statusColor = order.status === 'delivered' ? '#4ade80' : order.status === 'shipped' ? '#60a5fa' : '#facc15';
+                      return (
+                        <div key={order.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(0,0,0,0.2)' }}>
+                          {/* Order header */}
+                          <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.03)' }}>
+                            <div>
+                              <span className="font-orbitron font-bold text-xs text-white tracking-wider">#{shortId}</span>
+                              <span className="font-mono text-[10px] text-gray-600 ml-3">{new Date(order.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <select
+                              value={order.status}
+                              onChange={e => updateOrderStatus(order.id, e.target.value)}
+                              className="font-orbitron font-bold text-[10px] px-2 py-1 rounded outline-none cursor-pointer"
+                              style={{ background: 'rgba(0,0,0,0.5)', border: `1px solid ${statusColor}40`, color: statusColor }}
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="shipped">Shipped</option>
+                              <option value="delivered">Delivered</option>
+                            </select>
+                          </div>
+                          {/* Customer + products */}
+                          <div className="px-4 py-3 space-y-2">
+                            <div>
+                              <p className="font-mono text-xs text-white">{order.customer_name || order.shipping_name || 'Customer'}</p>
+                              <p className="font-mono text-[10px] text-gray-500">{order.customer_email}</p>
+                            </div>
+                            <div className="space-y-1">
+                              {(order.product_names || []).map((name, i) => (
+                                <p key={i} className="font-mono text-xs text-gray-400">
+                                  {name}
+                                  {order.variant_labels?.[i] ? <span className="text-gray-600"> · {order.variant_labels[i]}</span> : null}
+                                  {order.quantities?.[i] > 1 ? <span className="text-gray-600"> × {order.quantities[i]}</span> : null}
+                                </p>
+                              ))}
+                            </div>
+                            {/* Shipping address */}
+                            {order.shipping_line1 && (
+                              <div className="pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                <p className="font-mono text-[10px] text-gray-600 mb-1">Ships to</p>
+                                <p className="font-mono text-xs text-gray-400 leading-relaxed">
+                                  {order.shipping_name && order.shipping_name !== order.customer_name ? <>{order.shipping_name}<br /></> : null}
+                                  {order.shipping_line1}{order.shipping_line2 ? `, ${order.shipping_line2}` : ''}<br />
+                                  {order.shipping_city}{order.shipping_state ? `, ${order.shipping_state}` : ''} {order.shipping_postal_code} · {order.shipping_country}
+                                </p>
+                              </div>
+                            )}
+                            {/* Amount */}
+                            <p className="font-orbitron font-bold text-xs text-right" style={{ color: '#00d4ff' }}>
+                              {order.currency} {(order.amount_total / 100).toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {ordersSubTab === 'contact' && (
                   <div className="flex flex-1 min-h-0">
                     {/* Contact list */}

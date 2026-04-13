@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, ensureAuth } from '../lib/supabase';
-import { ownerConfig, OwnerConfig, GoalItem, AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
+import { ownerConfig, OwnerConfig, GoalItem, AdminPermissions, defaultAdminPermissions, CommissionsConfig, defaultCommissionsConfig } from '../config/ownerConfig';
 
 interface SupportContextType {
   config: OwnerConfig;
@@ -10,6 +10,7 @@ interface SupportContextType {
   savePosts: (posts: OwnerConfig['posts']) => Promise<void>;
   savePageContent: (field: 'membershipPage' | 'donatePage', data: { headline: string; subheading: string }) => Promise<void>;
   saveAdminPermissions: (perms: AdminPermissions) => Promise<void>;
+  saveCommissions: (cfg: CommissionsConfig) => Promise<void>;
   loading: boolean;
 }
 
@@ -31,6 +32,7 @@ const rowToConfig = (row: Record<string, unknown> | null): OwnerConfig => {
     membershipPage: Object.assign({}, ownerConfig.membershipPage, (row.membership_page as object) ?? {}),
     donatePage: Object.assign({}, ownerConfig.donatePage, (row.donate_page as object) ?? {}),
     adminPermissions: (row.admin_permissions as AdminPermissions) ?? defaultAdminPermissions,
+    commissionsConfig: Object.assign({}, defaultCommissionsConfig, (row.commissions_config as object) ?? {}),
   };
 };
 
@@ -91,8 +93,14 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await supabase.from('support_config').update({ admin_permissions: adminPermissions }).eq('id', 1);
   };
 
+  const saveCommissions = async (commissionsConfig: CommissionsConfig) => {
+    await ensureAuth();
+    setConfig((c) => ({ ...c, commissionsConfig }));
+    await supabase.from('support_config').update({ commissions_config: commissionsConfig }).eq('id', 1);
+  };
+
   return (
-    <SupportContext.Provider value={{ config, saveGoals, saveMembership, saveDonation, savePosts, savePageContent, saveAdminPermissions, loading }}>
+    <SupportContext.Provider value={{ config, saveGoals, saveMembership, saveDonation, savePosts, savePageContent, saveAdminPermissions, saveCommissions, loading }}>
       {children}
     </SupportContext.Provider>
   );

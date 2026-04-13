@@ -36,6 +36,28 @@ export const recordTransaction = async (session, extra = {}) => {
   });
 };
 
+export const recordPhysicalOrder = async (session, extra = {}) => {
+  const shipping = session.shipping_details?.address ?? {};
+  await getDb().from('physical_orders').upsert({
+    id: session.id,
+    uid: session.metadata?.uid || session.client_reference_id || '',
+    customer_name: session.customer_details?.name || '',
+    customer_email: session.customer_details?.email || '',
+    shipping_name: session.shipping_details?.name || '',
+    shipping_line1: shipping.line1 || '',
+    shipping_line2: shipping.line2 || '',
+    shipping_city: shipping.city || '',
+    shipping_state: shipping.state || '',
+    shipping_postal_code: shipping.postal_code || '',
+    shipping_country: shipping.country || '',
+    amount_total: session.amount_total || 0,
+    currency: session.currency?.toUpperCase() || '',
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    ...extra,
+  });
+};
+
 export const grantDigitalPurchase = async (uid, product, sessionId) => {
   await getDb().from('digital_purchases').upsert({
     user_id: uid,

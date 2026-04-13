@@ -23,6 +23,7 @@ import { CartProvider } from './context/CartContext';
 import { stashDiscordOAuthHash } from './lib/discord';
 import CartDrawer from './components/CartDrawer';
 import ContactModal from './components/ContactModal';
+import PageTransition from './components/PageTransition';
 
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
 const MemberPanel = lazy(() => import('./components/MemberPanel'));
@@ -36,6 +37,8 @@ const MembershipPage = lazy(() => import('./pages/Membership'));
 const DonatePage = lazy(() => import('./pages/Donate'));
 const DonationSuccessPage = lazy(() => import('./pages/DonationSuccess'));
 const MessagesPage = lazy(() => import('./pages/Messages'));
+const OrderSuccessPage = lazy(() => import('./pages/OrderSuccess'));
+const CommissionsPage = lazy(() => import('./pages/Commissions'));
 
 // Konami code: ↑↑↓↓←→←→ba — secret owner panel access
 const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
@@ -49,8 +52,10 @@ const PAGE_NAMES: Record<string, string> = {
   'donate': 'Donation',
   'donate/success': 'Donation',
   'store': 'Store',
+  'store/success': 'Order Confirmed',
   'download': 'Download',
   'messages': 'Messages',
+  'commissions': 'Commissions',
 };
 
 const RouteLoader: React.FC = () => {
@@ -155,19 +160,23 @@ const App: React.FC = () => (
             <StoreProvider>
               <CartProvider>
                 <Suspense fallback={<RouteLoader />}>
-                  <Routes>
-                    <Route path="/" element={<AppInner />} />
-                    <Route path="/posts" element={<PostsPage />} />
-                    <Route path="/profile" element={<ProfilePage />} />
-                    <Route path="/membership" element={<MembershipPage />} />
-                    <Route path="/donate" element={<DonatePage />} />
-                    <Route path="/donate/success" element={<DonationSuccessPage />} />
-                    <Route path="/store" element={<StorePage />} />
-                    <Route path="/store/:productId" element={<StoreProductDetailPage />} />
-                    <Route path="/download" element={<DownloadPage />} />
-                    <Route path="/messages" element={<MessagesPage />} />
-                  </Routes>
-                  <CartDrawer />
+                  <PageTransition>
+                    <Routes>
+                      <Route path="/" element={<AppInner />} />
+                      <Route path="/posts" element={<PostsPage />} />
+                      <Route path="/profile" element={<ProfilePage />} />
+                      <Route path="/membership" element={<MembershipPage />} />
+                      <Route path="/donate" element={<DonatePage />} />
+                      <Route path="/donate/success" element={<DonationSuccessPage />} />
+                      <Route path="/store" element={<StorePage />} />
+                      <Route path="/store/:productId" element={<StoreProductDetailPage />} />
+                      <Route path="/store/success" element={<OrderSuccessPage />} />
+                      <Route path="/download" element={<DownloadPage />} />
+                      <Route path="/messages" element={<MessagesPage />} />
+                      <Route path="/commissions" element={<CommissionsPage />} />
+                    </Routes>
+                    <CartDrawer />
+                  </PageTransition>
                 </Suspense>
               </CartProvider>
             </StoreProvider>
