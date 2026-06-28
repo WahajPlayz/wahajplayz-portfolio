@@ -82,12 +82,12 @@ const Header: React.FC = () => {
       }`}
       style={isScrolled ? { background: 'rgba(0,0,0,0.85)', borderBottom: '1px solid rgba(0,212,255,0.15)' } : {}}
     >
-      <div className="max-w-7xl mx-auto px-6 grid grid-cols-[auto_1fr_auto] items-center gap-6">
+      <div className="max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-[auto_auto] xl:grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 xl:gap-8">
         {/* Logo */}
         <a
           href="#home"
           onClick={(e) => handleNavClick(e, '#home')}
-          className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity shrink-0"
         >
           <img
             src={logoSrc}
@@ -96,17 +96,17 @@ const Header: React.FC = () => {
             className="h-10 w-10 object-contain rounded-full"
             style={{ boxShadow: '0 0 12px rgba(0,212,255,0.4)' }}
           />
-          <span className="font-orbitron font-bold text-sm tracking-widest hidden sm:block" style={{ color: '#00d4ff' }}>WAHAJPLAYZ</span>
+          <span className="hidden lg:block font-orbitron font-bold text-sm tracking-[0.18em] whitespace-nowrap" style={{ color: '#00d4ff' }}>WAHAJPLAYZ</span>
         </a>
 
         {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center justify-center space-x-5" aria-label="Main Navigation">
+        <nav className="hidden xl:flex items-center justify-center gap-4 2xl:gap-5 min-w-0 px-6 2xl:px-10" aria-label="Main Navigation">
           {navLinks.map((link) => (
             <a
               key={link.name}
               href={link.href}
               onClick={(e) => handleNavClick(e, link.href)}
-              className="text-xs font-orbitron font-bold tracking-widest uppercase text-gray-400 hover:text-white transition-colors relative group py-2"
+              className="text-xs font-orbitron font-bold tracking-[0.18em] uppercase text-gray-400 hover:text-white transition-colors relative group py-2 whitespace-nowrap"
             >
               {link.name}
               <span className="absolute bottom-0 left-0 w-0 h-px transition-all duration-300 group-hover:w-full" style={{ background: '#00d4ff', boxShadow: '0 0 8px #00d4ff' }}></span>
@@ -115,7 +115,14 @@ const Header: React.FC = () => {
         </nav>
 
         {/* Account / CTA */}
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden xl:flex items-center gap-3 justify-self-end whitespace-nowrap shrink-0">
+          <button
+            onClick={() => navigate('/support')}
+            className="px-4 py-2 font-orbitron font-bold text-xs tracking-widest uppercase transition-all duration-300 hover:scale-105"
+            style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.4)', color: '#a855f7', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}
+          >
+            Support
+          </button>
           <button
             onClick={() => navigate('/commissions')}
             className="px-4 py-2 font-orbitron font-bold text-xs tracking-widest uppercase transition-all duration-300 hover:scale-105"
@@ -161,7 +168,7 @@ const Header: React.FC = () => {
 
         {/* Mobile Toggle */}
         <button
-          className="md:hidden p-2 border transition-colors"
+          className="xl:hidden p-2 border transition-colors justify-self-end"
           style={{ borderColor: 'rgba(0,212,255,0.3)', color: '#00d4ff' }}
           onClick={() => setMobileMenuOpen((prev) => !prev)}
           aria-label="Toggle mobile menu"
@@ -173,7 +180,7 @@ const Header: React.FC = () => {
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden absolute top-full left-0 w-full backdrop-blur-xl p-6 flex flex-col space-y-2"
+        <div className="xl:hidden absolute top-full left-0 w-full backdrop-blur-xl p-6 flex flex-col space-y-2"
           style={{ background: 'rgba(0,0,0,0.95)', borderBottom: '1px solid rgba(0,212,255,0.15)' }}>
           {navLinks.map((link) => (
             <a
@@ -186,6 +193,13 @@ const Header: React.FC = () => {
               {link.name}
             </a>
           ))}
+          <button
+            onClick={() => { setMobileMenuOpen(false); navigate('/support'); }}
+            className="text-left font-orbitron text-xs tracking-widest uppercase py-3 border-b transition-colors"
+            style={{ borderColor: 'rgba(168,85,247,0.15)', color: '#a855f7' }}
+          >
+            Support
+          </button>
           <button
             onClick={() => { setMobileMenuOpen(false); navigate('/commissions'); }}
             className="text-left font-orbitron text-xs tracking-widest uppercase py-3 border-b transition-colors"

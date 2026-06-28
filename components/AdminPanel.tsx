@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { useSupportData } from '../context/SupportContext';
 import { useStore } from '../context/StoreContext';
-import { StoreProduct, StoreConfig, COUNTRIES } from '../config/storeConfig';
+import { StoreProduct, StoreConfig } from '../config/storeConfig';
 import { Tier, AdminPermissions } from '../config/ownerConfig';
-import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search, MessageSquare, Send, Gamepad2, Sparkles, Wrench, Zap, Code } from 'lucide-react';
+import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search, MessageSquare, Send, Gamepad2, Sparkles, Wrench, Zap, Code, ListChecks, Map } from 'lucide-react';
 import { ensureAuth, getAuthToken, supabase, FUNCTIONS_URL } from '../lib/supabase';
 import { uploadToGitHub } from '../lib/githubStorage';
 import { OWNER_DISCORD_ID } from '../lib/discord';
+import TaskBoard from './TaskBoard';
 
 const blankTier = (): Tier => ({
   id: 'tier-' + Date.now(),
@@ -110,6 +111,7 @@ const permissionLabels: Record<keyof AdminPermissions, { title: string; descript
 const AdminPanel: React.FC = () => {
   const {
     isAdminOpen,
+    adminForcePasswordGate,
     closeAdmin,
     discordUser,
     currentAppUser,
@@ -120,6 +122,8 @@ const AdminPanel: React.FC = () => {
     roadmapProjects,
     appUsers,
     requests,
+    teamTasks,
+    teamTasksLoading,
     addFAQ,
     removeFAQ,
     addProject,
@@ -145,6 +149,8 @@ const AdminPanel: React.FC = () => {
   } = useData();
 
   const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'goal' | 'membership' | 'posts' | 'donation' | 'store' | 'commissions' | 'orders' | 'permissions'>('roadmap');
+  const [roadmapSubTab, setRoadmapSubTab] = useState<'roadmap' | 'board'>('roadmap');
+  const [boardProjectId, setBoardProjectId] = useState<string>('');
   const [newFaqQ, setNewFaqQ] = useState('');
   const [newFaqA, setNewFaqA] = useState('');
   const [newProjTitle, setNewProjTitle] = useState('');
@@ -171,15 +177,40 @@ const AdminPanel: React.FC = () => {
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [localAuth, setLocalAuth] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
-  const handlePasswordLogin = () => {
-    const secret = import.meta.env.VITE_ADMIN_PASSWORD;
-    if (secret && passwordInput === secret) {
+  const handlePasswordLogin = async () => {
+    if (!passwordInput.trim()) {
+      setPasswordError('Enter the owner password.');
+      return;
+    }
+
+    setPasswordLoading(true);
+    setPasswordError('');
+
+    try {
+      const response = await fetch(`${FUNCTIONS_URL}/verify-owner-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof data?.error === 'string' ? data.error : 'Incorrect password.');
+      }
+
       setLocalAuth(true);
-      setPasswordError('');
-    } else {
-      setPasswordError('Incorrect password.');
+    } catch (error) {
+      const message = getErrorMessage(error, 'Incorrect password.');
+      setPasswordError(
+        message === 'Failed to fetch'
+          ? 'Could not reach the owner password verifier. Deploy the `verify-owner-password` Supabase function and set the `ADMIN_PASSWORD` secret.'
+          : message
+      );
       setPasswordInput('');
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -191,15 +222,13 @@ const AdminPanel: React.FC = () => {
   const { config: storeConfig, saveStore } = useStore();
   const [storeData, setStoreData] = useState<StoreConfig>(storeConfig);
   const [editingProduct, setEditingProduct] = useState<StoreProduct | null>(null);
-  const [countrySearch, setCountrySearch] = useState('');
   useEffect(() => { setStoreData(storeConfig); }, [storeConfig]);
   const blankProduct = (): StoreProduct => ({
     id: 'prod-' + Date.now(),
     name: '', description: '', price: 0, salePercent: 0,
-    type: 'digital', category: '', coverImage: '', stripeUrl: '',
+    type: 'digital', category: '', coverImage: '',
     digitalFileUrl: '', digitalFileName: '',
-    stock: null, enabled: true, featured: false, tags: [],
-    shippingCountryMode: 'all-except-blocked', blockedCountries: [], allowedCountries: [], customFields: [],
+    stock: null, enabled: true, featured: false, tags: [], customFields: [],
   });
   const setP = (patch: Partial<StoreProduct>) => setEditingProduct(ep => ep ? { ...ep, ...patch } : ep);
 
@@ -213,6 +242,37 @@ const AdminPanel: React.FC = () => {
   const [membershipUploadError, setMembershipUploadError] = useState('');
   const [membershipUploadStatus, setMembershipUploadStatus] = useState('');
   const [roadmapUploadStatus, setRoadmapUploadStatus] = useState<Record<string, string>>({});
+
+  // Discord guild roles (fetched from the bot to power the role picker)
+  type GuildRole = { id: string; name: string; color: number; position: number; managed: boolean };
+  const [guildRoles, setGuildRoles] = useState<GuildRole[] | null>(null);
+  const [guildRolesError, setGuildRolesError] = useState('');
+  const [guildRolesLoading, setGuildRolesLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'membership' || guildRoles) return;
+    let cancelled = false;
+    const load = async () => {
+      setGuildRolesLoading(true);
+      setGuildRolesError('');
+      try {
+        const token = await getAuthToken();
+        if (!token) throw new Error('You must be signed in.');
+        const res = await fetch(FUNCTIONS_URL + '/discord-roles', {
+          headers: { Authorization: 'Bearer ' + token },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || ('HTTP ' + res.status));
+        if (!cancelled) setGuildRoles(Array.isArray(data.roles) ? data.roles : []);
+      } catch (error) {
+        if (!cancelled) setGuildRolesError(error instanceof Error ? error.message : 'Failed to load Discord roles.');
+      } finally {
+        if (!cancelled) setGuildRolesLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [activeTab, guildRoles]);
 
   // Posts editor
   type PostDraft = typeof config.posts[0];
@@ -459,11 +519,21 @@ const AdminPanel: React.FC = () => {
 
   const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID;
   const ownerSessionVerified = localStorage.getItem(OWNER_SESSION_KEY) === '1';
-  const isOwner = role === 'owner' || isOwnerAccount || ownerSessionVerified || localAuth;
-  const isAuthenticated = role === 'owner' || role === 'admin' || isOwnerAccount || ownerSessionVerified || localAuth;
+  const isOwner = !adminForcePasswordGate && (role === 'owner' || isOwnerAccount || ownerSessionVerified || localAuth);
+  const isAuthenticated = adminForcePasswordGate
+    ? localAuth
+    : role === 'owner' || role === 'admin' || isOwnerAccount || ownerSessionVerified || localAuth;
   const effectiveAdminPermissions = currentAppUser?.adminPermissions ?? config.adminPermissions;
   const canAccessTab = (tab: keyof AdminPermissions) => isOwner || effectiveAdminPermissions[tab] !== false;
   const visiblePrimaryTabs = permissionOrder.filter(tab => canAccessTab(tab));
+
+  useEffect(() => {
+    if (!boardProjectId && roadmapProjects.length > 0) {
+      setBoardProjectId(roadmapProjects[0].id);
+    } else if (boardProjectId && !roadmapProjects.find(p => p.id === boardProjectId)) {
+      setBoardProjectId(roadmapProjects[0]?.id ?? '');
+    }
+  }, [roadmapProjects, boardProjectId]);
 
   useEffect(() => {
     if (activeTab === 'permissions' && !isOwner) {
@@ -475,7 +545,7 @@ const AdminPanel: React.FC = () => {
     }
   }, [activeTab, isOwner, visiblePrimaryTabs]);
 
-  if (authLoading && !localAuth) {
+  if (authLoading && !localAuth && !adminForcePasswordGate) {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
         <div className="bg-neutral-900 w-full max-w-md rounded-2xl border border-purple-500/30 shadow-2xl p-8 text-center">
@@ -503,17 +573,19 @@ const AdminPanel: React.FC = () => {
               type="password"
               value={passwordInput}
               onChange={e => { setPasswordInput(e.target.value); setPasswordError(''); }}
-              onKeyDown={e => e.key === 'Enter' && handlePasswordLogin()}
+              onKeyDown={e => e.key === 'Enter' && !passwordLoading && void handlePasswordLogin()}
               placeholder="Admin password"
               className="w-full px-4 py-3 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500 transition-colors"
               autoFocus
+              disabled={passwordLoading}
             />
             {passwordError && <p className="text-red-400 text-sm">{passwordError}</p>}
             <button
-              onClick={handlePasswordLogin}
-              className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold transition-colors"
+              onClick={() => void handlePasswordLogin()}
+              disabled={passwordLoading}
+              className="w-full py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg font-bold transition-colors"
             >
-              Unlock Panel
+              {passwordLoading ? 'Checking...' : 'Unlock Panel'}
             </button>
             <p className="text-center text-gray-600 text-xs">
               Or sign in with Discord via the Team Portal
@@ -544,6 +616,7 @@ const AdminPanel: React.FC = () => {
   };
 
   const handleApprove = async (discordId: string) => {
+    if (approveProjectIds.length === 0) return;
     await approveRequest(discordId, approveRole, approveProjectIds, approveRole === 'admin' ? approveAdminPermissions : undefined);
     setApprovingId(null);
     setApproveRole('member');
@@ -571,7 +644,7 @@ const AdminPanel: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          adminPassword: localAuth ? passwordInput || import.meta.env.VITE_ADMIN_PASSWORD || '' : '',
+          adminPassword: localAuth ? passwordInput : '',
           discordToken: localStorage.getItem('discord_token') || '',
         }),
       });
@@ -598,7 +671,7 @@ const AdminPanel: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-neutral-900 w-full max-w-5xl max-h-[90vh] rounded-2xl border border-purple-500/30 shadow-2xl flex flex-col overflow-hidden">
+      <div className={`bg-neutral-900 ${activeTab === 'roadmap' && roadmapSubTab === 'board' ? 'w-[95vw] h-[95vh] max-w-none' : 'w-full max-w-5xl max-h-[90vh]'} rounded-2xl border border-purple-500/30 shadow-2xl flex flex-col overflow-hidden transition-all duration-300`}>
 
         {/* Header */}
         <div className="p-6 border-b border-white/10 flex justify-between items-center bg-neutral-950">
@@ -706,7 +779,68 @@ const AdminPanel: React.FC = () => {
 
             {/* ── ROADMAP TAB ── */}
             {activeTab === 'roadmap' && (
-              <div className="space-y-12 pb-12">
+              <div className={roadmapSubTab === 'board' ? 'h-full flex flex-col' : 'space-y-12 pb-12'}>
+                {/* Sub-tabs */}
+                <div className="flex gap-1 mb-6 border-b border-white/5 flex-shrink-0">
+                  <button
+                    onClick={() => setRoadmapSubTab('roadmap')}
+                    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${roadmapSubTab === 'roadmap' ? 'text-white border-purple-500' : 'text-gray-500 hover:text-gray-300 border-transparent'}`}
+                  >
+                    <Map size={15} /> Roadmap
+                  </button>
+                  <button
+                    onClick={() => setRoadmapSubTab('board')}
+                    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${roadmapSubTab === 'board' ? 'text-white border-purple-500' : 'text-gray-500 hover:text-gray-300 border-transparent'}`}
+                  >
+                    <ListChecks size={15} /> Task Board
+                  </button>
+                </div>
+
+                {roadmapSubTab === 'board' ? (
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    {roadmapProjects.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-20 text-gray-500 flex-1">
+                        <ListChecks size={48} className="mb-4 opacity-30" />
+                        <p>No projects yet.</p>
+                        <p className="text-sm mt-1 opacity-60">Create a project from the Roadmap sub-tab to start a board.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-3 mb-4 flex-shrink-0">
+                          <label className="text-xs uppercase tracking-[0.2em] text-gray-500">Project</label>
+                          <select
+                            value={boardProjectId}
+                            onChange={e => setBoardProjectId(e.target.value)}
+                            className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-purple-500"
+                          >
+                            {roadmapProjects.map(p => (
+                              <option key={p.id} value={p.id}>{p.title}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                          {boardProjectId && (() => {
+                            const eligibleMembers = appUsers
+                              .filter(user => user.role !== 'pending')
+                              .filter(user => user.role === 'owner' || user.role === 'admin' || user.projectIds.includes(boardProjectId));
+                            const assigneeOptions = eligibleMembers.length > 0
+                              ? eligibleMembers
+                              : currentAppUser ? [currentAppUser] : [];
+                            return (
+                              <TaskBoard
+                                projectId={boardProjectId}
+                                tasks={teamTasks.filter(t => t.projectId === boardProjectId)}
+                                assigneeOptions={assigneeOptions}
+                                loading={teamTasksLoading}
+                              />
+                            );
+                          })()}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                <>
                 <div className="bg-purple-600/10 p-4 rounded-xl border border-purple-500/20 flex gap-4">
                   <input type="text" value={newProjTitle} onChange={(e) => setNewProjTitle(e.target.value)} placeholder="New Project Name" className="flex-1 px-4 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()} />
                   <button onClick={handleCreateProject} className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg flex items-center gap-2 font-bold">
@@ -947,6 +1081,8 @@ const AdminPanel: React.FC = () => {
                     </div>
                   );
                 })}
+                </>
+                )}
               </div>
             )}
 
@@ -1156,10 +1292,14 @@ const AdminPanel: React.FC = () => {
                                 </button>
                               ))}
                             </div>
+                            <p className="text-xs text-yellow-300/80 mt-2">
+                              Choose at least one roadmap before approving this account.
+                            </p>
                           </div>
                           <button
                             onClick={() => handleApprove(req.discordId)}
-                            className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg font-bold flex items-center gap-2 transition-colors"
+                            disabled={approveProjectIds.length === 0}
+                            className="px-6 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold flex items-center gap-2 transition-colors"
                           >
                             <UserCheck size={16} /> Confirm Approval
                           </button>
@@ -1579,14 +1719,36 @@ const AdminPanel: React.FC = () => {
 
                       {/* Prices */}
                       <div>
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Pricing</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs text-gray-400 uppercase tracking-wider">Pricing</p>
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={d.lifetimeEnabled !== false}
+                              onChange={e => set({ lifetimeEnabled: e.target.checked })}
+                              className="w-4 h-4 accent-amber-500"
+                            />
+                            <span className="text-gray-300 text-xs">Offer Lifetime (one-time)</span>
+                          </label>
+                        </div>
                         <div className="grid grid-cols-3 gap-3">
-                          {[['Monthly (' + (config.goals?.[0]?.currency || '£') + ')', 'monthlyPrice'], ['Yearly (' + (config.goals?.[0]?.currency || '£') + ')', 'yearlyPrice'], ['Lifetime (' + (config.goals?.[0]?.currency || '£') + ')', 'lifetimePrice']].map(([label, key]) => (
-                            <div key={key}>
-                              <label className="text-xs text-gray-500 mb-1 block">{label}</label>
-                              <input type="number" min={0} value={(d as any)[key]} onChange={e => set({ [key]: parseFloat(e.target.value) || 0 } as any)} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
-                            </div>
-                          ))}
+                          {[['Monthly (' + (config.goals?.[0]?.currency || '£') + ')', 'monthlyPrice'], ['Yearly (' + (config.goals?.[0]?.currency || '£') + ')', 'yearlyPrice'], ['Lifetime (' + (config.goals?.[0]?.currency || '£') + ')', 'lifetimePrice']].map(([label, key]) => {
+                            const isLifetimeField = key === 'lifetimePrice';
+                            const lifetimeOff = isLifetimeField && d.lifetimeEnabled === false;
+                            return (
+                              <div key={key}>
+                                <label className="text-xs text-gray-500 mb-1 block">{label}</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={(d as any)[key]}
+                                  onChange={e => set({ [key]: parseFloat(e.target.value) || 0 } as any)}
+                                  disabled={lifetimeOff}
+                                  className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                                />
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -1630,6 +1792,86 @@ const AdminPanel: React.FC = () => {
                         <div className="flex gap-2">
                           <input value={newBenefit} onChange={e => setNewBenefit(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newBenefit.trim()) { set({ benefits: [...d.benefits, { icon: '✅', text: newBenefit.trim(), highlighted: false }] }); setNewBenefit(''); } }} className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-sm focus:border-purple-500" placeholder="Add benefit (press Enter)" />
                           <button onClick={() => { if (newBenefit.trim()) { set({ benefits: [...d.benefits, { icon: '✅', text: newBenefit.trim(), highlighted: false }] }); setNewBenefit(''); } }} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg"><Plus size={14} /></button>
+                        </div>
+                      </div>
+
+                      {/* Discord roles */}
+                      <div>
+                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Discord Roles</p>
+                        <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-4">
+                          {guildRolesLoading && (
+                            <p className="text-xs text-gray-500">Loading Discord roles…</p>
+                          )}
+                          {guildRolesError && (
+                            <div className="text-xs text-red-400">
+                              <p className="mb-1">Couldn't load roles from Discord: {guildRolesError}</p>
+                              <p className="text-gray-500">Check that DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are set and the bot is in the server.</p>
+                            </div>
+                          )}
+                          {guildRoles && guildRoles.length === 0 && !guildRolesError && (
+                            <p className="text-xs text-gray-500">Bot can see the server but no assignable roles were returned.</p>
+                          )}
+                          {guildRoles && guildRoles.length > 0 && (() => {
+                            const renderPicker = (
+                              label: string,
+                              hint: string,
+                              selectedIds: string[],
+                              onToggle: (id: string) => void,
+                            ) => (
+                              <div>
+                                <label className="text-xs text-gray-500 mb-2 block">{label}</label>
+                                <div className="max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-2 space-y-1">
+                                  {guildRoles.map(r => {
+                                    const checked = selectedIds.includes(r.id);
+                                    const swatch = r.color
+                                      ? '#' + r.color.toString(16).padStart(6, '0')
+                                      : '#94a3b8';
+                                    return (
+                                      <label key={r.id} className="flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-white/5">
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => onToggle(r.id)}
+                                          className="w-4 h-4 accent-purple-500"
+                                        />
+                                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: swatch }} />
+                                        <span className="text-sm text-gray-200 flex-1">{r.name}</span>
+                                        {r.managed && <span className="text-[10px] text-gray-500">managed</span>}
+                                        <span className="text-[10px] text-gray-600 font-mono">{r.id.slice(-6)}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                                <p className="text-[11px] text-gray-500 mt-1">{hint}</p>
+                              </div>
+                            );
+
+                            const toggleBase = (id: string) => {
+                              const list = d.discordRoleIds || [];
+                              set({ discordRoleIds: list.includes(id) ? list.filter(x => x !== id) : [...list, id] });
+                            };
+                            const toggleLifetime = (id: string) => {
+                              const list = d.lifetimeDiscordRoleIds || [];
+                              set({ lifetimeDiscordRoleIds: list.includes(id) ? list.filter(x => x !== id) : [...list, id] });
+                            };
+
+                            return (
+                              <>
+                                {renderPicker(
+                                  'Roles to assign on purchase',
+                                  'Auto-assigned on monthly/yearly/lifetime purchases. Removed when the subscription is canceled.',
+                                  d.discordRoleIds || [],
+                                  toggleBase,
+                                )}
+                                {renderPicker(
+                                  'Lifetime-only extra roles',
+                                  'Granted only on lifetime purchases, in addition to the roles above. Never auto-removed.',
+                                  d.lifetimeDiscordRoleIds || [],
+                                  toggleLifetime,
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
 
@@ -2294,9 +2536,8 @@ const AdminPanel: React.FC = () => {
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="text-xs text-gray-400 mb-1 block">Type</label>
-                            <select value={editingProduct.type} onChange={e => setP({ type: e.target.value as 'digital' | 'physical' })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 text-sm">
+                            <select value={editingProduct.type} onChange={e => setP({ type: e.target.value as 'digital' })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 text-sm">
                               <option value="digital">Digital</option>
-                              <option value="physical">Physical</option>
                             </select>
                           </div>
                           <div>
@@ -2579,140 +2820,38 @@ const AdminPanel: React.FC = () => {
                       <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: 'rgba(99,102,241,0.08)', borderBottom: '1px solid rgba(99,102,241,0.15)' }}>
                         <span className="font-orbitron font-black text-xs" style={{ color: '#818cf8' }}>07</span>
                         <p className="font-orbitron font-bold text-xs tracking-widest text-white uppercase">Delivery</p>
-                        <p className="font-mono text-xs text-gray-600 ml-auto">{editingProduct.type === 'digital' ? 'Digital file upload' : 'Shipping restrictions'}</p>
+                        <p className="font-mono text-xs text-gray-600 ml-auto">Digital file upload</p>
                       </div>
                       <div className="p-4 space-y-3" style={{ background: 'rgba(0,0,0,0.25)' }}>
-                        {editingProduct.type === 'digital' ? (
-                          <>
-                            <div className="rounded-lg p-3 font-mono text-xs text-gray-500 space-y-1" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)' }}>
-                              <p className="text-indigo-300 font-bold">How digital delivery works</p>
-                              <p>Upload your file below. After a successful Stripe purchase, the buyer is automatically redirected to a secure download page — no manual steps needed.</p>
-                            </div>
-                            <label className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-sm transition-colors w-fit">
-                              <input type="file" className="hidden" onChange={async e => {
-                                const file = e.target.files?.[0]; if (!file) return;
-                                setStoreUploadError(''); setStoreUploadSuccess('');
-                                setStoreUploadStatus(`Uploading ${file.name}...`);
-                                try {
-                                  const { url, path } = await uploadAsset(`store/${editingProduct.id}/digital`, file,
-                                    (snap) => setStoreUploadStatus(`Uploading ${file.name}: ${formatUploadProgress(snap.bytesTransferred, snap.totalBytes)}`),
-                                    (s) => setStoreUploadStatus(`${s} ${file.name}`.trim())
-                                  );
-                                  setP({ digitalFileUrl: url, digitalFilePath: path, digitalFileName: file.name });
-                                  setStoreUploadSuccess(`File uploaded: ${file.name}`);
-                                } catch (err) {
-                                  setStoreUploadError(getErrorMessage(err, 'Digital file upload failed.'));
-                                } finally { e.currentTarget.value = ''; }
-                              }} />
-                              Upload Digital File
-                            </label>
-                            {editingProduct.digitalFileName && (
-                              <div className="flex items-center gap-3">
-                                <p className="font-mono text-xs text-cyan-300">📎 {editingProduct.digitalFileName}</p>
-                                {editingProduct.digitalFileUrl && (
-                                  <a href={editingProduct.digitalFileUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-indigo-400 hover:text-indigo-300 underline">Test Download</a>
-                                )}
-                              </div>
+                        <div className="rounded-lg p-3 font-mono text-xs text-gray-500 space-y-1" style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.15)' }}>
+                          <p className="text-indigo-300 font-bold">How digital delivery works</p>
+                          <p>Upload your file below. After a successful purchase, the buyer is automatically redirected to a secure download page — no manual steps needed.</p>
+                        </div>
+                        <label className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-sm transition-colors w-fit">
+                          <input type="file" className="hidden" onChange={async e => {
+                            const file = e.target.files?.[0]; if (!file) return;
+                            setStoreUploadError(''); setStoreUploadSuccess('');
+                            setStoreUploadStatus(`Uploading ${file.name}...`);
+                            try {
+                              const { url, path } = await uploadAsset(`store/${editingProduct.id}/digital`, file,
+                                (snap) => setStoreUploadStatus(`Uploading ${file.name}: ${formatUploadProgress(snap.bytesTransferred, snap.totalBytes)}`),
+                                (s) => setStoreUploadStatus(`${s} ${file.name}`.trim())
+                              );
+                              setP({ digitalFileUrl: url, digitalFilePath: path, digitalFileName: file.name });
+                              setStoreUploadSuccess(`File uploaded: ${file.name}`);
+                            } catch (err) {
+                              setStoreUploadError(getErrorMessage(err, 'Digital file upload failed.'));
+                            } finally { e.currentTarget.value = ''; }
+                          }} />
+                          Upload Digital File
+                        </label>
+                        {editingProduct.digitalFileName && (
+                          <div className="flex items-center gap-3">
+                            <p className="font-mono text-xs text-cyan-300">📎 {editingProduct.digitalFileName}</p>
+                            {editingProduct.digitalFileUrl && (
+                              <a href={editingProduct.digitalFileUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-indigo-400 hover:text-indigo-300 underline">Test Download</a>
                             )}
-                          </>
-                        ) : (
-                          <>
-                            <div className="grid gap-3 md:grid-cols-2">
-                              <button
-                                onClick={() => setP({ shippingCountryMode: 'all-except-blocked' })}
-                                className="rounded-lg px-3 py-2 text-left transition-colors"
-                                style={editingProduct.shippingCountryMode !== 'only-selected'
-                                  ? { background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', color: '#fca5a5' }
-                                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#9ca3af' }}
-                              >
-                                <p className="font-orbitron text-xs font-bold tracking-widest uppercase">Block Selected Countries</p>
-                                <p className="mt-1 font-mono text-[11px]">Ship worldwide except the countries you add below.</p>
-                              </button>
-                              <button
-                                onClick={() => setP({ shippingCountryMode: 'only-selected' })}
-                                className="rounded-lg px-3 py-2 text-left transition-colors"
-                                style={editingProduct.shippingCountryMode === 'only-selected'
-                                  ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', color: '#86efac' }
-                                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#9ca3af' }}
-                              >
-                                <p className="font-orbitron text-xs font-bold tracking-widest uppercase">Only Ship To Selected Countries</p>
-                                <p className="mt-1 font-mono text-[11px]">Pick the countries you do ship to instead of blocking them one by one.</p>
-                              </button>
-                            </div>
-                            <p className="font-mono text-xs text-gray-500">
-                              {editingProduct.shippingCountryMode === 'only-selected'
-                                ? 'Customers outside your selected shipping countries will see "Not available in your region" and cannot purchase.'
-                                : 'Customers in blocked countries will see "Not available in your region" and cannot purchase.'}
-                            </p>
-                            <div className="flex flex-wrap gap-1.5 mb-2">
-                              {(editingProduct.shippingCountryMode === 'only-selected'
-                                ? (editingProduct.allowedCountries || [])
-                                : editingProduct.blockedCountries
-                              ).map(code => {
-                                const c = COUNTRIES.find(x => x.code === code);
-                                return (
-                                  <span
-                                    key={code}
-                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono"
-                                    style={editingProduct.shippingCountryMode === 'only-selected'
-                                      ? { background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80' }
-                                      : { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}
-                                  >
-                                    {c?.name || code}
-                                    <button
-                                      onClick={() => setP(editingProduct.shippingCountryMode === 'only-selected'
-                                        ? { allowedCountries: (editingProduct.allowedCountries || []).filter(x => x !== code) }
-                                        : { blockedCountries: editingProduct.blockedCountries.filter(x => x !== code) })}
-                                      className="hover:text-white"
-                                    >
-                                      <X size={10} />
-                                    </button>
-                                  </span>
-                                );
-                              })}
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] font-mono text-gray-600">
-                              <span>
-                                {editingProduct.shippingCountryMode === 'only-selected'
-                                  ? `${(editingProduct.allowedCountries || []).length} shipping countr${(editingProduct.allowedCountries || []).length === 1 ? 'y' : 'ies'} selected`
-                                  : `${editingProduct.blockedCountries.length} blocked countr${editingProduct.blockedCountries.length === 1 ? 'y' : 'ies'}`}
-                              </span>
-                              <button
-                                onClick={() => setP(editingProduct.shippingCountryMode === 'only-selected'
-                                  ? { allowedCountries: [] }
-                                  : { blockedCountries: [] })}
-                                className="transition-colors hover:text-white"
-                              >
-                                Clear List
-                              </button>
-                            </div>
-                            <div className="relative">
-                              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
-                              <input value={countrySearch} onChange={e => setCountrySearch(e.target.value)} placeholder={editingProduct.shippingCountryMode === 'only-selected' ? 'Search country to allow...' : 'Search country to block...'}
-                                className="w-full pl-8 pr-4 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-red-500/50 text-xs font-mono" />
-                            </div>
-                            {countrySearch && (
-                              <div className="max-h-36 overflow-y-auto rounded-lg border border-white/10 bg-black/80">
-                                {COUNTRIES.filter(c => {
-                                  const matches = c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.toLowerCase().includes(countrySearch.toLowerCase());
-                                  const selected = editingProduct.shippingCountryMode === 'only-selected'
-                                    ? (editingProduct.allowedCountries || []).includes(c.code)
-                                    : editingProduct.blockedCountries.includes(c.code);
-                                  return matches && !selected;
-                                }).slice(0, 10).map(c => (
-                                  <button key={c.code} onClick={() => {
-                                    setP(editingProduct.shippingCountryMode === 'only-selected'
-                                      ? { allowedCountries: [...(editingProduct.allowedCountries || []), c.code] }
-                                      : { blockedCountries: [...editingProduct.blockedCountries, c.code] });
-                                    setCountrySearch('');
-                                  }}
-                                    className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-white/5 font-mono flex items-center justify-between">
-                                    <span>{c.name}</span><span className="text-gray-600">{c.code}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </>
+                          </div>
                         )}
                       </div>
                     </div>

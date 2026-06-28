@@ -4,6 +4,7 @@ import { useSupportData } from '@/context/SupportContext';
 import { useAuth } from '@/context/AuthContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { startMembershipCheckout } from '@/lib/stripeCheckout';
+import { POLAR_SUPPORTED_CURRENCIES } from '@/lib/polarCurrencies';
 
 type Billing = 'monthly' | 'yearly' | 'lifetime';
 
@@ -11,7 +12,7 @@ const MembershipTiers: React.FC = () => {
   const { config, loading } = useSupportData();
   const baseCurrency = (config.goals?.[0]?.currencyCode || 'GBP') || 'GBP';
   const { user, authLoading, openAuthModal } = useAuth();
-  const { formatPrice, currency } = useCurrency();
+  const { formatPrice, currency, convertBetween } = useCurrency();
   const { membership } = config;
   const [billing, setBilling] = useState<Billing>('monthly');
   const [checkoutError, setCheckoutError] = useState('');
@@ -19,7 +20,7 @@ const MembershipTiers: React.FC = () => {
 
   useEffect(() => {
     const saved = localStorage.getItem('wahaj_billing') as Billing | null;
-    if (saved) setBilling(saved);
+    if (saved === 'monthly' || saved === 'yearly') setBilling(saved);
   }, []);
 
   const handleBilling = (b: Billing) => {
@@ -29,17 +30,21 @@ const MembershipTiers: React.FC = () => {
 
   const getPrice = (tier: typeof membership.tiers[0]) => {
     if (billing === 'monthly') return tier.monthlyPrice;
-    if (billing === 'yearly') return tier.yearlyPrice;
-    return tier.lifetimePrice;
+    return tier.yearlyPrice;
   };
 
   const launchCheckout = async (tier: typeof membership.tiers[0]) => {
     setCheckoutError('');
     setStartingTierId(tier.id);
     try {
-      await startMembershipCheckout(tier.id, billing, currency.code);
+      const gbpPrice = getPrice(tier);
+      const pricesByCurrency: Record<string, number> = {};
+      for (const code of POLAR_SUPPORTED_CURRENCIES) {
+        pricesByCurrency[code] = convertBetween(gbpPrice, 'GBP', code);
+      }
+      await startMembershipCheckout(tier.id, billing, currency.code, pricesByCurrency);
     } catch (error) {
-      const nextError = error instanceof Error ? error.message : 'Failed to start Stripe Checkout.';
+      const nextError = error instanceof Error ? error.message : 'Failed to start checkout.';
       setCheckoutError(nextError);
       setStartingTierId(null);
     }
@@ -78,22 +83,26 @@ const MembershipTiers: React.FC = () => {
       {membership.subheading && (
         <p className="text-gray-400 text-sm text-center mb-3">{membership.subheading}</p>
       )}
-      <p className="text-gray-500 text-xs text-center mb-8">Membership checkout will open in {currency.code}.</p>
+      <p className="text-gray-500 text-xs text-center mb-8">Checkout will be shown in {currency.code}.</p>
 
       <div className="flex justify-center mb-10">
         <div className="flex p-1 gap-1" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(168,85,247,0.2)', clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)' }}>
-          {(['monthly', 'yearly', 'lifetime'] as Billing[]).map(b => (
-            <button
-              key={b}
-              onClick={() => handleBilling(b)}
-              className="px-4 py-2 font-orbitron text-xs tracking-widest uppercase transition-all"
-              style={billing === b
-                ? { background: 'rgba(168,85,247,0.3)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.6)' }
-                : { color: '#6b7280', border: '1px solid transparent' }}
-            >
-              {b}{b === 'yearly' && membership.yearlyDiscountPercent ? ` (-${membership.yearlyDiscountPercent}%)` : ''}
-            </button>
-          ))}
+          {(['monthly', 'yearly', 'lifetime'] as Billing[]).map(b => {
+            // Hide lifetime if no tier offers it
+            if (b === 'lifetime' && !membership.tiers.some(t => t.lifetimeEnabled !== false)) return null;
+            return (
+              <button
+                key={b}
+                onClick={() => handleBilling(b)}
+                className="px-4 py-2 font-orbitron text-xs tracking-widest uppercase transition-all"
+                style={billing === b
+                  ? { background: 'rgba(168,85,247,0.3)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.6)' }
+                  : { color: '#6b7280', border: '1px solid transparent' }}
+              >
+                {b}{b === 'yearly' && membership.yearlyDiscountPercent ? ` (-${membership.yearlyDiscountPercent}%)` : ''}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -102,6 +111,7 @@ const MembershipTiers: React.FC = () => {
           const price = getPrice(tier);
           const accent = tier.accentColour;
           const isStarting = startingTierId === tier.id;
+          const lifetimeBlocked = billing === 'lifetime' && tier.lifetimeEnabled === false;
           return (
             <div
               key={tier.id}
@@ -145,7 +155,7 @@ const MembershipTiers: React.FC = () => {
                     <span>{b.icon} {b.text}</span>
                   </li>
                 ))}
-                {billing === 'lifetime' && tier.lifetimeExtraBenefits.map((b, i) => (
+                {billing === 'lifetime' && tier.lifetimeExtraBenefits?.map((b, i) => (
                   <li key={'lt-' + i} className="flex items-start gap-2 text-sm font-semibold" style={{ color: accent }}>
                     <Check size={14} className="mt-0.5 flex-shrink-0" />
                     <span>{b.icon} {b.text}</span>
@@ -160,7 +170,7 @@ const MembershipTiers: React.FC = () => {
               )}
               <button
                 onClick={() => handleSelect(tier)}
-                disabled={isStarting || authLoading}
+                disabled={isStarting || authLoading || lifetimeBlocked}
                 className="w-full py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   background: `${accent}20`,
@@ -169,7 +179,7 @@ const MembershipTiers: React.FC = () => {
                   clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)',
                 }}
               >
-                {isStarting ? 'Opening Checkout' : authLoading ? 'Preparing Sign-In' : `Get ${tier.name}`}
+                {lifetimeBlocked ? 'Lifetime Not Available' : isStarting ? 'Opening Checkout' : authLoading ? 'Preparing Sign-In' : `Get ${tier.name}`}
               </button>
             </div>
           );

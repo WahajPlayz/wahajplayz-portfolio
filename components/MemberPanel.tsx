@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { X, Check, Plus, Trash2, ChevronUp, ChevronDown, LogOut, Clock, Users } from 'lucide-react';
-import { getDiscordAvatarUrl, OWNER_DISCORD_ID } from '../lib/discord';
-const OWNER_SESSION_KEY = 'wahaj_owner_verified';
+import { X, Check, Plus, Trash2, ChevronUp, ChevronDown, LogOut, Clock, Users, ListChecks, Map } from 'lucide-react';
+import { getDiscordAvatarUrl } from '../lib/discord';
+import TaskBoard from './TaskBoard';
 
 const moveInArray = (ids: string[], id: string, direction: 'up' | 'down') => {
   const idx = ids.indexOf(id);
@@ -34,26 +34,50 @@ const MemberPanel: React.FC = () => {
     toggleStep,
     reorderSections,
     reorderSteps,
+    teamTasks,
+    teamTasksLoading,
+    appUsers,
   } = useData();
 
   const [newSectionInputs, setNewSectionInputs] = useState<{ [key: string]: string }>({});
   const [newStepInputs, setNewStepInputs] = useState<{ [key: string]: string }>({});
-  const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID || localStorage.getItem(OWNER_SESSION_KEY) === '1';
+  const [activeTab, setActiveTab] = useState<'projects' | 'board'>('projects');
+  const [boardProjectId, setBoardProjectId] = useState<string>('');
+  const canAccessProjects = role === 'member' || role === 'admin' || role === 'owner';
 
-  // When role becomes admin/owner while panel is open, switch to admin panel
+  const assignedProjectIds = currentAppUser?.projectIds || [];
+  const accessibleProjects = useMemo(
+    () => role === 'owner' || role === 'admin'
+      ? roadmapProjects
+      : roadmapProjects.filter(p => assignedProjectIds.includes(p.id)),
+    [role, roadmapProjects, assignedProjectIds]
+  );
+
   useEffect(() => {
-    if ((role === 'owner' || role === 'admin' || isOwnerAccount) && isMemberPanelOpen) {
-      closeMemberPanel();
+    if (!boardProjectId && accessibleProjects.length > 0) {
+      setBoardProjectId(accessibleProjects[0].id);
+    } else if (boardProjectId && !accessibleProjects.find(p => p.id === boardProjectId)) {
+      setBoardProjectId(accessibleProjects[0]?.id ?? '');
+    }
+  }, [accessibleProjects, boardProjectId]);
+
+  useEffect(() => {
+    if (!isMemberPanelOpen) return;
+    if (authLoading) return;
+    if (role === 'owner' || role === 'admin') {
       openAdmin();
     }
-  }, [role, isMemberPanelOpen, isOwnerAccount, closeMemberPanel, openAdmin]);
+  }, [isMemberPanelOpen, authLoading, role, openAdmin]);
 
   if (!isMemberPanelOpen) return null;
 
-  const assignedProjectIds = currentAppUser?.projectIds || [];
-  const accessibleProjects = assignedProjectIds.length > 0
-    ? roadmapProjects.filter(p => assignedProjectIds.includes(p.id))
-    : roadmapProjects;
+  const boardProject = accessibleProjects.find(p => p.id === boardProjectId);
+  const boardEligibleMembers = boardProject ? appUsers
+    .filter(user => user.role !== 'pending')
+    .filter(user => user.role === 'owner' || user.role === 'admin' || user.projectIds.includes(boardProject.id)) : [];
+  const boardAssigneeOptions = boardEligibleMembers.length > 0
+    ? boardEligibleMembers
+    : currentAppUser ? [currentAppUser] : [];
 
   const handleAddSection = (projectId: string) => {
     const title = newSectionInputs[projectId];
@@ -69,39 +93,64 @@ const MemberPanel: React.FC = () => {
   const avatarUrl = discordUser ? getDiscordAvatarUrl(discordUser) : null;
   const displayName = discordUser?.global_name || discordUser?.username || '';
 
+  const isBoardTab = activeTab === 'board' && canAccessProjects && !!discordUser;
+  const containerSize = isBoardTab
+    ? 'w-[95vw] h-[95vh] max-w-none'
+    : 'w-full max-w-3xl max-h-[90vh]';
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-neutral-900 w-full max-w-3xl max-h-[90vh] rounded-2xl border border-indigo-500/30 shadow-2xl flex flex-col overflow-hidden">
+      <div className={`bg-neutral-900 ${containerSize} rounded-2xl border border-indigo-500/30 shadow-2xl flex flex-col overflow-hidden transition-all duration-300`}>
 
         {/* Header */}
-        <div className="p-6 border-b border-white/10 flex justify-between items-center bg-neutral-950">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Users size={20} className="text-indigo-400" />
-            Team Portal
-            {discordUser && avatarUrl && (
-              <img src={avatarUrl} alt={displayName} className="w-7 h-7 rounded-full border border-white/20" />
-            )}
-            {discordUser && (
-              <span className="text-sm font-normal text-gray-400">{displayName}</span>
-            )}
-          </h2>
-          <div className="flex items-center gap-3">
-            {discordUser && (
-              <button
-                onClick={discordLogout}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-              >
-                <LogOut size={14} /> Sign out
+        <div className="px-6 pt-5 pb-0 border-b border-white/10 bg-neutral-950">
+          <div className="flex justify-between items-center pb-4">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+              <Users size={20} className="text-indigo-400" />
+              Team Portal
+              {discordUser && avatarUrl && (
+                <img src={avatarUrl} alt={displayName} className="w-7 h-7 rounded-full border border-white/20" />
+              )}
+              {discordUser && (
+                <span className="text-sm font-normal text-gray-400">{displayName}</span>
+              )}
+            </h2>
+            <div className="flex items-center gap-3">
+              {discordUser && (
+                <button
+                  onClick={discordLogout}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <LogOut size={14} /> Sign out
+                </button>
+              )}
+              <button onClick={closeMemberPanel} className="text-gray-400 hover:text-white transition-colors">
+                <X size={24} />
               </button>
-            )}
-            <button onClick={closeMemberPanel} className="text-gray-400 hover:text-white transition-colors">
-              <X size={24} />
-            </button>
+            </div>
           </div>
+
+          {/* Tabs */}
+          {!authLoading && discordUser && canAccessProjects && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => setActiveTab('projects')}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeTab === 'projects' ? 'text-white border-indigo-500' : 'text-gray-500 hover:text-gray-300 border-transparent'}`}
+              >
+                <Map size={15} /> Projects
+              </button>
+              <button
+                onClick={() => setActiveTab('board')}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeTab === 'board' ? 'text-white border-indigo-500' : 'text-gray-500 hover:text-gray-300 border-transparent'}`}
+              >
+                <ListChecks size={15} /> Task Board
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-6">
+        <div className={`flex-1 overflow-auto ${isBoardTab ? 'p-4' : 'p-6'}`}>
 
           {/* Loading */}
           {(authLoading || (discordUser && role === null && !portalSyncError)) && (
@@ -174,14 +223,14 @@ const MemberPanel: React.FC = () => {
             </div>
           )}
 
-          {/* Member dashboard */}
-          {!authLoading && discordUser && role === 'member' && (
+          {/* Projects tab — roadmaps only */}
+          {!authLoading && discordUser && canAccessProjects && activeTab === 'projects' && (
             <div className="space-y-10 pb-8">
               {accessibleProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-500">
                   <Users size={48} className="mb-4 opacity-30" />
-                  <p>No roadmap projects are available yet.</p>
-                  <p className="text-sm mt-1 opacity-60">Once projects are added, they will show up here automatically.</p>
+                  <p>No roadmap projects have been assigned yet.</p>
+                  <p className="text-sm mt-1 opacity-60">The owner needs to approve your access and choose which roadmap projects you can see.</p>
                 </div>
               ) : (
                 accessibleProjects.map(project => (
@@ -238,6 +287,47 @@ const MemberPanel: React.FC = () => {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          )}
+
+          {/* Task Board tab */}
+          {!authLoading && discordUser && canAccessProjects && activeTab === 'board' && (
+            <div className="h-full flex flex-col">
+              {accessibleProjects.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-500 flex-1">
+                  <ListChecks size={48} className="mb-4 opacity-30" />
+                  <p>No projects assigned yet.</p>
+                  <p className="text-sm mt-1 opacity-60">You'll be able to create task boards once you have access to a project.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Project picker */}
+                  <div className="flex items-center gap-3 mb-4 flex-shrink-0">
+                    <label className="text-xs uppercase tracking-[0.2em] text-gray-500">Project</label>
+                    <select
+                      value={boardProjectId}
+                      onChange={e => setBoardProjectId(e.target.value)}
+                      className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-indigo-500"
+                    >
+                      {accessibleProjects.map(p => (
+                        <option key={p.id} value={p.id}>{p.title}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Board */}
+                  <div className="flex-1 overflow-hidden">
+                    {boardProject && (
+                      <TaskBoard
+                        projectId={boardProject.id}
+                        tasks={teamTasks.filter(t => t.projectId === boardProject.id)}
+                        assigneeOptions={boardAssigneeOptions}
+                        loading={teamTasksLoading}
+                      />
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}

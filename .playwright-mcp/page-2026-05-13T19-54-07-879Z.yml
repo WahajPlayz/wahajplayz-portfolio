@@ -1,0 +1,167 @@
+- generic [ref=e35]:
+  - generic [ref=e36]:
+    - generic [ref=e37]:
+      - generic [ref=e39]:
+        - button "← Back to Home" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: ←
+          - text: Back to Home
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - generic [ref=e46]:
+              - generic [ref=e47]:
+                - generic [ref=e48]: «
+                - heading "WAHAJPLAYZ" [level=1] [ref=e49]
+                - generic [ref=e50]: »
+              - paragraph [ref=e51]: Indie Game Dev · Content Creator
+            - generic [ref=e52]:
+              - img "WahajPlayz" [ref=e53]
+              - generic [ref=e54]:
+                - paragraph [ref=e55]: WahajPlayz
+                - paragraph [ref=e56]: "@wahajplayz · Indie Game Developer"
+              - generic [ref=e57]:
+                - button "Share" [ref=e58] [cursor=pointer]:
+                  - img [ref=e59]
+                  - text: Share
+                - link "Discord" [ref=e65] [cursor=pointer]:
+                  - /url: https://discord.gg/KF9cMSZ2hW
+          - generic [ref=e67]:
+            - generic [ref=e68]:
+              - paragraph [ref=e69]: Support
+              - heading "Buy a Coffee for WahajPlayz" [level=3] [ref=e70]
+            - generic [ref=e71]:
+              - generic [ref=e72]:
+                - button "£3.00" [ref=e73] [cursor=pointer]
+                - button "£5.00" [ref=e74] [cursor=pointer]
+                - button "£10.00" [ref=e75] [cursor=pointer]
+                - button "£25.00" [ref=e76] [cursor=pointer]
+              - generic [ref=e77]:
+                - generic [ref=e78]: GBP
+                - spinbutton [ref=e79]
+              - textbox "Your name (optional)" [ref=e80]
+              - textbox "Leave a message (optional)" [ref=e81]
+              - button "Select an Amount" [disabled] [ref=e82]:
+                - img [ref=e83]
+                - text: Select an Amount
+      - generic [ref=e86]:
+        - button "Home" [ref=e87] [cursor=pointer]
+        - button "Membership" [ref=e88] [cursor=pointer]
+        - button "Posts" [ref=e89] [cursor=pointer]
+        - button "Shop" [ref=e90] [cursor=pointer]
+        - button "Commissions" [ref=e91] [cursor=pointer]
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - paragraph [ref=e95]: Membership
+          - heading "Choose Your Membership" [level=2] [ref=e96]
+          - paragraph [ref=e97]: Support the mission and get exclusive access to dev content, builds, and community perks.
+        - generic [ref=e101]:
+          - generic [ref=e102]:
+            - paragraph [ref=e103]: Steam Release
+            - paragraph [ref=e104]: To release my game on steam!!!
+          - generic [ref=e105]:
+            - paragraph [ref=e106]:
+              - text: £12.00
+              - generic [ref=e107]: / £100.00
+            - paragraph [ref=e108]: 12% funded
+        - generic [ref=e112]:
+          - heading "Choose How You Want to Be Part of This" [level=3] [ref=e113]
+          - paragraph [ref=e114]: Every tier gives you something real. No fluff.
+          - paragraph [ref=e115]: Checkout will be shown in GBP.
+          - generic [ref=e117]:
+            - button "monthly" [ref=e118] [cursor=pointer]
+            - button "yearly (-20%)" [ref=e119] [cursor=pointer]
+            - button "lifetime" [ref=e120] [cursor=pointer]
+          - generic [ref=e121]:
+            - generic [ref=e122]:
+              - generic [ref=e123]:
+                - generic [ref=e124]: Bronze Tier
+                - generic [ref=e125]: Welcome I hope you will enjoy your benefits
+              - generic [ref=e126]:
+                - text: £80.00
+                - generic [ref=e127]: /once
+              - list [ref=e128]:
+                - listitem [ref=e129]:
+                  - img [ref=e130]
+                  - generic [ref=e132]: ✅ Discord Access
+                - listitem [ref=e133]:
+                  - img [ref=e134]
+                  - generic [ref=e136]: ✅ Social Media Shout-out
+              - generic [ref=e137]:
+                - generic [ref=e138]: 🏷️
+                - generic [ref=e139]:
+                  - strong [ref=e140]: 10% off
+                  - text: all store products for subscribers
+              - button "Get Bronze Tier" [active] [ref=e141] [cursor=pointer]
+            - generic [ref=e142]:
+              - generic [ref=e143]:
+                - generic [ref=e144]: Silver Tier
+                - generic [ref=e145]: You will get a shout out, you will get access to betas of my projects and you will get a early early sneak peak
+              - generic [ref=e146]:
+                - text: £150.00
+                - generic [ref=e147]: /once
+              - list [ref=e148]:
+                - listitem [ref=e149]:
+                  - img [ref=e150]
+                  - generic [ref=e152]: ✅ Discord Access
+                - listitem [ref=e153]:
+                  - img [ref=e154]
+                  - generic [ref=e156]: ✅ Everything in Bronze Tier membership
+                - listitem [ref=e157]:
+                  - img [ref=e158]
+                  - generic [ref=e160]: ✅ Access to betas
+                - listitem [ref=e161]:
+                  - img [ref=e162]
+                  - generic [ref=e164]: ✅ You will get early sneak peaks in my discord server
+              - generic [ref=e165]:
+                - generic [ref=e166]: 🏷️
+                - generic [ref=e167]:
+                  - strong [ref=e168]: 15% off
+                  - text: all store products for subscribers
+              - button "Get Silver Tier" [ref=e169] [cursor=pointer]
+            - generic [ref=e170]:
+              - generic [ref=e171]:
+                - generic [ref=e172]: Gold Tier
+                - generic [ref=e173]: This is where you get access to Exclusive Discounts, Work in progress updates and where you can see me work on my projects
+              - generic [ref=e174]:
+                - text: £220.00
+                - generic [ref=e175]: /once
+              - list [ref=e176]:
+                - listitem [ref=e177]:
+                  - img [ref=e178]
+                  - generic [ref=e180]: ✅ Discord Access
+                - listitem [ref=e181]:
+                  - img [ref=e182]
+                  - generic [ref=e184]: ✅ Everything in Sliver tier membership
+                - listitem [ref=e185]:
+                  - img [ref=e186]
+                  - generic [ref=e188]: ✅ Exclusive Discounts
+                - listitem [ref=e189]:
+                  - img [ref=e190]
+                  - generic [ref=e192]: ✅ Access to a streaming area where you can see me work on my projects
+              - generic [ref=e193]:
+                - generic [ref=e194]: 🏷️
+                - generic [ref=e195]:
+                  - strong [ref=e196]: 20% off
+                  - text: all store products for subscribers
+              - button "Get Gold Tier" [ref=e197] [cursor=pointer]
+    - complementary [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]:
+            - paragraph [ref=e13]: Your Cart
+            - heading "0 items" [level=2] [ref=e14]
+          - button [ref=e15] [cursor=pointer]:
+            - img [ref=e16]
+        - generic [ref=e20]:
+          - img [ref=e21]
+          - paragraph [ref=e24]: Your cart is empty
+          - paragraph [ref=e25]: Add something from the product page and it will appear here.
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - generic [ref=e28]: Subtotal
+            - generic [ref=e29]: £0.00
+          - button "Continue Shopping" [ref=e30] [cursor=pointer]
+          - button "Go to Checkout" [disabled] [ref=e198]
+  - link "Support" [ref=e32] [cursor=pointer]:
+    - /url: /#/donate
+    - img [ref=e33]
+    - text: Support

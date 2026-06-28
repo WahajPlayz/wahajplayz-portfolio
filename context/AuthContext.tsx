@@ -6,6 +6,10 @@ interface AuthContextType {
   user: User | null;
   authLoading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithDiscord: () => Promise<void>;
+  signInWithGitHub: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
   signOutFirebase: () => Promise<void>;
   isAuthModalOpen: boolean;
   openAuthModal: (onSuccess?: () => void) => void;
@@ -37,11 +41,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
+  const oauth = async (provider: 'google' | 'discord' | 'github') => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
       options: { redirectTo: window.location.origin },
     });
+    if (error) throw error;
+  };
+
+  const signInWithGoogle = () => oauth('google');
+  const signInWithDiscord = () => oauth('discord');
+  const signInWithGitHub = () => oauth('github');
+
+  const signInWithEmail = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  };
+
+  const signUpWithEmail = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) throw error;
+    // If email confirmation is required, session is null until user clicks the email link.
+    return { needsConfirmation: !data.session };
   };
 
   const signOutFirebase = async () => {
@@ -61,7 +86,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{
       user, authLoading,
-      signInWithGoogle, signOutFirebase,
+      signInWithGoogle, signInWithDiscord, signInWithGitHub,
+      signInWithEmail, signUpWithEmail,
+      signOutFirebase,
       isAuthModalOpen, openAuthModal, closeAuthModal, pendingCallback,
     }}>
       {children}

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Minus, Plus, ShoppingBag, Star, Download, Package } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { isProductRestrictedInCountry, StoreProduct } from '@/config/storeConfig';
+import { StoreProduct } from '@/config/storeConfig';
 import { useStore } from '@/context/StoreContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useCart } from '@/context/CartContext';
@@ -22,7 +22,7 @@ const StoreProductDetail: React.FC = () => {
   const { productId } = useParams();
   const navigate = useNavigate();
   const { config } = useStore();
-  const { formatPrice, userCountry } = useCurrency();
+  const { formatPrice } = useCurrency();
   const { addItem, openCart } = useCart();
 
   const product = config.products.find(p => p.id === productId && p.enabled) || null;
@@ -77,8 +77,6 @@ const StoreProductDetail: React.FC = () => {
   const salePercent = product.salePercent || 0;
   const effectivePrice = salePercent > 0 ? Math.round(product.price * (1 - salePercent / 100) * 100) / 100 : product.price;
   const selectedColor = product.colorOptions?.find(c => c.id === selectedColorId) || null;
-  const isBlockedInRegion = isProductRestrictedInCountry(product, userCountry);
-
   const hasColors = (product.colorOptions?.length || 0) > 0;
   const hasTypes = (product.typeOptions?.length || 0) > 0;
   const hasSizes = (product.sizeOptions?.length || 0) > 0;
@@ -86,7 +84,7 @@ const StoreProductDetail: React.FC = () => {
   const hasBulkDiscounts = (product.bulkDiscounts?.length || 0) > 0;
 
   const missingRequired = product.customFields?.filter(f => f.required && !customAnswers[f.label]?.trim()) || [];
-  const canAdd = !isOutOfStock && !isBlockedInRegion && missingRequired.length === 0;
+  const canAdd = !isOutOfStock && missingRequired.length === 0;
 
   const averageRating = reviews.length > 0
     ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
@@ -196,8 +194,6 @@ const StoreProductDetail: React.FC = () => {
               )}
               {isOutOfStock ? (
                 <span className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>Out of Stock</span>
-              ) : isBlockedInRegion ? (
-                <span className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>Not available in your region</span>
               ) : product.stock !== null && product.stock <= 5 ? (
                 <span className="font-mono text-xs px-3 py-1" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }}>Only {product.stock} left</span>
               ) : (
@@ -372,12 +368,6 @@ const StoreProductDetail: React.FC = () => {
                 Please fill in: {missingRequired.map(f => f.label).join(', ')}
               </p>
             )}
-            {isBlockedInRegion && (
-              <p className="font-mono text-xs mb-3" style={{ color: '#f87171' }}>
-                This physical item is not available for shipping to your region.
-              </p>
-            )}
-
             {/* Add to Cart */}
             <button onClick={onAddToCart} disabled={!canAdd}
               className="w-full py-4 font-orbitron font-bold text-sm tracking-widest uppercase transition-all hover:scale-[1.02] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
@@ -387,7 +377,7 @@ const StoreProductDetail: React.FC = () => {
                 color: addedFeedback ? '#4ade80' : '#00d4ff',
                 clipPath: 'polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%)',
               }}>
-              {isOutOfStock ? 'Out of Stock' : isBlockedInRegion ? 'Not Available In Your Region' : addedFeedback ? 'Added to Cart!' : 'Add to Cart'}
+              {isOutOfStock ? 'Out of Stock' : addedFeedback ? 'Added to Cart!' : 'Add to Cart'}
             </button>
           </div>
         </div>

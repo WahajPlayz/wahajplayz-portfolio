@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useSupportData } from '@/context/SupportContext';
+import { useAuth } from '@/context/AuthContext';
 import { useCurrency } from '@/hooks/useCurrency';
 import { startCommissionCheckout } from '@/lib/stripeCheckout';
-import { X, ImageOff, CheckCircle, XCircle } from 'lucide-react';
+import { POLAR_SUPPORTED_CURRENCIES } from '@/lib/polarCurrencies';
+import { X, ImageOff } from 'lucide-react';
 
 const Commissions: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { config } = useSupportData();
   const { commissionsConfig } = config;
-  const { formatPrice } = useCurrency();
-
-  const checkoutState = searchParams.get('checkout'); // 'success' | 'cancel' | null
+  const { formatPrice, currency, convertBetween } = useCurrency();
+  const { user, authLoading, openAuthModal } = useAuth();
 
   const [selectedService, setSelectedService] = useState<{ id: string; title: string; basePrice: number } | null>(null);
   const [description, setDescription] = useState('');
@@ -32,19 +32,50 @@ const Commissions: React.FC = () => {
     setErrorMsg('');
   };
 
+  const runCheckout = async (svc: { title: string; basePrice: number }, desc: string, ctc: string) => {
+    const pricesByCurrency: Record<string, number> = {};
+    for (const code of POLAR_SUPPORTED_CURRENCIES) {
+      pricesByCurrency[code] = convertBetween(svc.basePrice, 'GBP', code);
+    }
+    await startCommissionCheckout(
+      svc.title,
+      svc.basePrice,
+      desc,
+      ctc,
+      currency.code,
+      pricesByCurrency,
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!description.trim() || !contact.trim() || !selectedService) return;
+
+    if (authLoading) {
+      setErrorMsg('Sign-in is still loading. Please wait a moment and try again.');
+      return;
+    }
+
+    const svc = selectedService;
+    const desc = description.trim();
+    const ctc = contact.trim();
+
+    if (!user) {
+      openAuthModal(() => {
+        setSubmitting(true);
+        setErrorMsg('');
+        runCheckout(svc, desc, ctc).catch((err) => {
+          setErrorMsg(err instanceof Error ? err.message : 'Something went wrong.');
+          setSubmitting(false);
+        });
+      });
+      return;
+    }
+
     setSubmitting(true);
     setErrorMsg('');
     try {
-      await startCommissionCheckout(
-        selectedService.title,
-        selectedService.basePrice,
-        'GBP',
-        description.trim(),
-        contact.trim(),
-      );
+      await runCheckout(svc, desc, ctc);
       // redirects away — no further state needed
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Something went wrong.');
@@ -65,27 +96,6 @@ const Commissions: React.FC = () => {
           <span>←</span> Back
         </button>
       </div>
-
-      {/* Payment result banners */}
-      {checkoutState === 'success' && (
-        <div className="max-w-5xl mx-auto px-6 mb-8">
-          <div className="flex items-center gap-3 p-4 rounded-lg" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)' }}>
-            <CheckCircle size={20} style={{ color: '#22c55e', flexShrink: 0 }} />
-            <div>
-              <p className="font-orbitron font-bold text-sm text-white">Payment received!</p>
-              <p className="text-gray-400 text-xs mt-0.5">Your commission request has been submitted. I'll reach out to you soon via the contact info you provided.</p>
-            </div>
-          </div>
-        </div>
-      )}
-      {checkoutState === 'cancel' && (
-        <div className="max-w-5xl mx-auto px-6 mb-8">
-          <div className="flex items-center gap-3 p-4 rounded-lg" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
-            <XCircle size={20} style={{ color: '#ef4444', flexShrink: 0 }} />
-            <p className="text-gray-400 text-sm">Checkout was cancelled. No payment was taken.</p>
-          </div>
-        </div>
-      )}
 
       {/* Hero */}
       <div className="max-w-5xl mx-auto px-6 mb-16">
@@ -319,9 +329,9 @@ const Commissions: React.FC = () => {
                   clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)',
                 }}
               >
-                {submitting ? 'Redirecting to checkout…' : `Pay & Submit — ${formatPrice(selectedService.basePrice, 'GBP')}`}
+                {submitting ? 'Redirecting to checkout…' : !user ? `Sign In to Pay — ${formatPrice(selectedService.basePrice, 'GBP')}` : `Pay & Submit — ${formatPrice(selectedService.basePrice, 'GBP')}`}
               </button>
-              <p className="text-center text-xs text-gray-600">Secure payment via Stripe. Your details are saved with the payment.</p>
+              <p className="text-center text-xs text-gray-600">Secure payment processed by Polar. Your details are saved with the payment.</p>
             </form>
           </div>
         </div>

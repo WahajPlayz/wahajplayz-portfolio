@@ -3,6 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { StoreProduct } from '@/config/storeConfig';
 import { startStoreCheckout } from '@/lib/stripeCheckout';
+import { POLAR_SUPPORTED_CURRENCIES } from '@/lib/polarCurrencies';
 
 export interface CartVariantSelection {
   colorId: string;
@@ -57,7 +58,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isOpen, setIsOpen] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
-  const { currency } = useCurrency();
+  const { currency, convertBetween } = useCurrency();
   const { user, authLoading, openAuthModal } = useAuth();
 
   const subtotal = useMemo(
@@ -113,6 +114,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCheckoutError('');
     setCheckoutLoading(true);
     try {
+      const pricesByCurrencyPerItem: Record<string, Record<string, number>> = {};
+      for (const item of items) {
+        const perCurrency: Record<string, number> = {};
+        for (const code of POLAR_SUPPORTED_CURRENCIES) {
+          // item.price is in GBP (store config base currency)
+          perCurrency[code] = convertBetween(item.price, 'GBP', code);
+        }
+        pricesByCurrencyPerItem[item.productId] = perCurrency;
+      }
+
       await startStoreCheckout(items.map(item => {
         const parts: string[] = [];
         if (item.variant.colorLabel) parts.push(`Colour: ${item.variant.colorLabel}`);
@@ -128,7 +139,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           quantity: item.quantity,
           variantLabel: parts.join(' | '),
         };
-      }), currency.code);
+      }), currency.code, pricesByCurrencyPerItem);
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Failed to start checkout.');
       setCheckoutLoading(false);

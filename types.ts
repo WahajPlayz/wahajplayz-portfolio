@@ -52,6 +52,41 @@ export interface RoadmapProject {
   status?: 'active' | 'planned' | 'completed' | 'on-hold';
 }
 
+export interface TaskColumn {
+  id: string;
+  projectId: string;
+  title: string;
+  color: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface TaskChecklistItem {
+  id: string;
+  text: string;
+  isCompleted: boolean;
+}
+
+export interface TaskChecklist {
+  id: string;
+  title: string;
+  items: TaskChecklistItem[];
+}
+
+export interface TeamTask {
+  id: string;
+  projectId: string;
+  columnId: string | null;
+  title: string;
+  description: string;
+  assigneeDiscordId: string | null;
+  createdByDiscordId: string | null;
+  sortOrder: number;
+  checklists: TaskChecklist[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppUser {
   discordId: string;
   username: string;

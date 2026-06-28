@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import About from './components/About';
@@ -33,15 +33,21 @@ const StorePage = lazy(() => import('./pages/Store'));
 const StoreProductDetailPage = lazy(() => import('./pages/StoreProductDetail'));
 const DownloadPage = lazy(() => import('./pages/Download'));
 const ProfilePage = lazy(() => import('./pages/Profile'));
-const MembershipPage = lazy(() => import('./pages/Membership'));
-const DonatePage = lazy(() => import('./pages/Donate'));
 const DonationSuccessPage = lazy(() => import('./pages/DonationSuccess'));
+const HubPage = lazy(() => import('./pages/Hub'));
 const MessagesPage = lazy(() => import('./pages/Messages'));
 const OrderSuccessPage = lazy(() => import('./pages/OrderSuccess'));
 const CommissionsPage = lazy(() => import('./pages/Commissions'));
+const CommissionSuccessPage = lazy(() => import('./pages/CommissionSuccess'));
 
 // Konami code: ↑↑↓↓←→←→ba — secret owner panel access
 const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+
+const SECTION_IDS = new Set([
+  'home', 'about', 'creations', 'roadmap',
+  'experience', 'community', 'faq',
+]);
+const PENDING_SCROLL_KEY = 'pendingScrollSection';
 
 const LOGO_URL = 'https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg';
 const PAGE_NAMES: Record<string, string> = {
@@ -49,6 +55,7 @@ const PAGE_NAMES: Record<string, string> = {
   'posts': 'Posts',
   'profile': 'Profile',
   'membership': 'Membership',
+  'support': 'Support Hub',
   'donate': 'Donation',
   'donate/success': 'Donation',
   'store': 'Store',
@@ -56,6 +63,7 @@ const PAGE_NAMES: Record<string, string> = {
   'download': 'Download',
   'messages': 'Messages',
   'commissions': 'Commissions',
+  'commissions/success': 'Commission Confirmed',
 };
 
 const RouteLoader: React.FC = () => {
@@ -93,9 +101,18 @@ const RouteLoader: React.FC = () => {
   );
 };
 
+const GlobalAuthModal: React.FC = () => {
+  const { isAuthModalOpen } = useAuth();
+  if (!isAuthModalOpen) return null;
+  return (
+    <Suspense fallback={null}>
+      <AuthModal />
+    </Suspense>
+  );
+};
+
 const AppInner: React.FC = () => {
   const { openMemberPanel, isAdminOpen, isMemberPanelOpen } = useData();
-  const { isAuthModalOpen } = useAuth();
   const keySequence = useRef<string[]>([]);
 
   useEffect(() => {
@@ -109,6 +126,15 @@ const AppInner: React.FC = () => {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [openMemberPanel]);
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem(PENDING_SCROLL_KEY);
+    if (!pending) return;
+    sessionStorage.removeItem(PENDING_SCROLL_KEY);
+    requestAnimationFrame(() => {
+      document.getElementById(pending)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    });
+  }, []);
 
   return (
     <div className="min-h-screen text-white selection:bg-purple-500 selection:text-white relative" style={{ backgroundColor: '#0d0e12' }}>
@@ -130,7 +156,6 @@ const AppInner: React.FC = () => {
       <Suspense fallback={null}>
         {isAdminOpen && <AdminPanel />}
         {isMemberPanelOpen && <MemberPanel />}
-        {isAuthModalOpen && <AuthModal />}
       </Suspense>
       <DiscordLink />
       <ContactModal />
@@ -151,6 +176,17 @@ const App: React.FC = () => (
       window.history.replaceState(null, '', nextUrl);
     }
 
+    // Rewrite bare section anchors like "#creations" (no leading slash) so
+    // HashRouter doesn't try to resolve them as routes. Scroll happens inside AppInner.
+    if (typeof window !== 'undefined') {
+      const raw = window.location.hash.replace(/^#/, '');
+      if (raw && !raw.startsWith('/') && !raw.includes('=') && SECTION_IDS.has(raw)) {
+        sessionStorage.setItem(PENDING_SCROLL_KEY, raw);
+        const nextUrl = `${window.location.pathname}${window.location.search}#/`;
+        window.history.replaceState(null, '', nextUrl);
+      }
+    }
+
     return (
   <HashRouter>
     <DataProvider>
@@ -165,8 +201,9 @@ const App: React.FC = () => (
                       <Route path="/" element={<AppInner />} />
                       <Route path="/posts" element={<PostsPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
-                      <Route path="/membership" element={<MembershipPage />} />
-                      <Route path="/donate" element={<DonatePage />} />
+                      <Route path="/support" element={<HubPage />} />
+                      <Route path="/membership" element={<Navigate to="/support?tab=membership" replace />} />
+                      <Route path="/donate" element={<Navigate to="/support" replace />} />
                       <Route path="/donate/success" element={<DonationSuccessPage />} />
                       <Route path="/store" element={<StorePage />} />
                       <Route path="/store/:productId" element={<StoreProductDetailPage />} />
@@ -174,8 +211,10 @@ const App: React.FC = () => (
                       <Route path="/download" element={<DownloadPage />} />
                       <Route path="/messages" element={<MessagesPage />} />
                       <Route path="/commissions" element={<CommissionsPage />} />
+                      <Route path="/commissions/success" element={<CommissionSuccessPage />} />
                     </Routes>
                     <CartDrawer />
+                    <GlobalAuthModal />
                   </PageTransition>
                 </Suspense>
               </CartProvider>

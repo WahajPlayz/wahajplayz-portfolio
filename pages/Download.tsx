@@ -25,6 +25,7 @@ const DownloadPage: React.FC = () => {
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const productId = params.get('product');
   const sessionId = params.get('session_id');
+  const checkoutId = params.get('checkout_id');
 
   const product = useMemo(() => {
     if (!productId) return null;
@@ -40,7 +41,9 @@ const DownloadPage: React.FC = () => {
       return;
     }
 
-    if (!sessionId) {
+    const verificationId = checkoutId || sessionId;
+
+    if (!verificationId) {
       if (product.digitalFileUrl) {
         setResolvedUrl(product.digitalFileUrl);
         setLoadingState('ready');
@@ -63,7 +66,10 @@ const DownloadPage: React.FC = () => {
       setLoadingState('verifying');
       setErrorMessage('');
       try {
-        const result = await verifyDigitalCheckout(sessionId);
+        const result = await verifyDigitalCheckout(
+          checkoutId ? { checkoutId } : { sessionId: sessionId ?? undefined },
+          product.id,
+        );
         if (result.status !== 'paid') {
           throw new Error('Payment verification is still pending.');
         }
@@ -84,7 +90,7 @@ const DownloadPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, product, sessionId, user]);
+  }, [authLoading, checkoutId, product, sessionId, user]);
 
   useEffect(() => {
     if (!resolvedUrl || loadingState !== 'ready') return;
@@ -123,12 +129,12 @@ const DownloadPage: React.FC = () => {
       );
     }
 
-    if (loadingState === 'verifying' || (authLoading && sessionId)) {
+    if (loadingState === 'verifying' || (authLoading && (sessionId || checkoutId))) {
       return (
         <>
           <p className="font-orbitron text-sm tracking-widest uppercase mb-3" style={{ color: '#a855f7' }}>Verifying Purchase</p>
           <h1 className="font-orbitron font-black text-3xl mb-3">Checking Your Payment</h1>
-          <p className="text-gray-400 text-sm mb-6">Verifying the Stripe session and preparing your download.</p>
+          <p className="text-gray-400 text-sm mb-6">Verifying your purchase and preparing the download.</p>
           <div className="w-10 h-10 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
         </>
       );
@@ -140,7 +146,7 @@ const DownloadPage: React.FC = () => {
           <p className="font-orbitron text-sm tracking-widest uppercase mb-3" style={{ color: '#a855f7' }}>Download Locked</p>
           <h1 className="font-orbitron font-black text-3xl mb-3">Access Required</h1>
           <p className="text-gray-400 text-sm mb-6">{errorMessage}</p>
-          {sessionId && !user && (
+          {(sessionId || checkoutId) && !user && (
             <button
               onClick={() => openAuthModal()}
               className="inline-flex items-center gap-2 px-5 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105"

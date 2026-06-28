@@ -55,7 +55,9 @@ interface CurrencyContextType {
   currency: CurrencyInfo;
   setCurrency: (code: string) => void;
   convert: (amount: number, fromCode?: string) => number;
+  convertBetween: (amount: number, fromCode: string, toCode: string) => number;
   formatPrice: (amount: number, fromCode?: string) => string;
+  rates: Record<string, number>;
   ratesReady: boolean;
   userCountry: string;
 }
@@ -101,14 +103,17 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCurrencyState(CURRENCIES[code]);
   };
 
-  // Convert amount from any currency to the currently selected currency
-  const convert = (amount: number, fromCode = 'USD'): number => {
-    if (fromCode === currency.code) return amount;
-    if (!rates[fromCode] || !rates[currency.code]) return amount;
-    // amount → USD → target
+  // Convert amount between two arbitrary currencies
+  const convertBetween = (amount: number, fromCode: string, toCode: string): number => {
+    if (fromCode === toCode) return amount;
+    if (!rates[fromCode] || !rates[toCode]) return amount;
     const inUSD = amount / rates[fromCode];
-    return inUSD * rates[currency.code];
+    return inUSD * rates[toCode];
   };
+
+  // Convert amount from any currency to the currently selected currency
+  const convert = (amount: number, fromCode = 'USD'): number =>
+    convertBetween(amount, fromCode, currency.code);
 
   // Format a price: converts then formats with current symbol
   const formatPrice = (amount: number, fromCode = 'USD'): string => {
@@ -122,7 +127,7 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <CurrencyContext.Provider value={{ currency, setCurrency, convert, formatPrice, ratesReady, userCountry }}>
+    <CurrencyContext.Provider value={{ currency, setCurrency, convert, convertBetween, formatPrice, rates, ratesReady, userCountry }}>
       {children}
     </CurrencyContext.Provider>
   );

@@ -1,0 +1,9 @@
+- generic [active]:
+  - generic [ref=e602]:
+    - img "WahajPlayz" [ref=e603]
+    - paragraph [ref=e604]: Loading up
+    - paragraph [ref=e605]: Posts
+  - link "Support" [ref=e9] [cursor=pointer]:
+    - /url: /#/donate
+    - img [ref=e10]
+    - text: Support

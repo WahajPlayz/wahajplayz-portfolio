@@ -64,7 +64,7 @@ No public UI exists for these:
 - 20 clicks on `#IndieDev` tag in `components/About.tsx` → `openMemberPanel()` (routes by role)
 - 20 clicks on `#Unity3D` tag in `components/About.tsx` → `openAdmin()` (always shows AdminPanel + password gate)
 - Konami code (↑↑↓↓←→←→BA) in `App.tsx` → `openMemberPanel()`
-- **Password login:** `VITE_ADMIN_PASSWORD` env var. Correct password sets `localAuth = true`, stored as `wahaj_owner_verified` in localStorage.
+- **Password login:** validated server-side via Supabase Edge Functions against the `ADMIN_PASSWORD` secret. Correct password sets `localAuth = true` for the current panel session.
 
 ## Panels
 
@@ -129,7 +129,7 @@ Stripe endpoints in `api/stripe/`:
 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 VITE_DISCORD_CLIENT_ID, VITE_DISCORD_REDIRECT_URI, VITE_OWNER_DISCORD_ID
 VITE_STRIPE_API_BASE   # Base URL for Vercel API (e.g. https://your-vercel-app.vercel.app)
-VITE_ADMIN_PASSWORD    # Password for admin panel without Discord
+ADMIN_PASSWORD         # Server-side owner password for admin panel and protected owner actions
 
 # API / Vercel serverless
 STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
@@ -138,6 +138,9 @@ APP_URL               # e.g. https://www.wahajplayz.org
 RESEND_API_KEY        # Email (contact form + messaging)
 OWNER_EMAIL           # Destination for contact form emails
 GITHUB_TOKEN, GITHUB_REPO, GITHUB_OWNER   # Asset uploads via Edge Function
+DISCORD_BOT_TOKEN     # Bot token for assigning membership roles in the guild
+DISCORD_GUILD_ID      # Numeric Discord server ID where membership roles live
+POLAR_WEBHOOK_SECRET  # Polar webhook signing secret
 ```
 
 ## Misc

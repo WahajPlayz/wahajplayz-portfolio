@@ -1,14 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { ShoppingBag, Package, Download, Lock, ExternalLink, Search, ArrowLeft } from 'lucide-react';
+import { ShoppingBag, Package, Download, ExternalLink, Search, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/context/StoreContext';
 import { useCurrency } from '@/context/CurrencyContext';
-import { isProductRestrictedInCountry } from '@/config/storeConfig';
-
 const Store: React.FC = () => {
   const navigate = useNavigate();
   const { config } = useStore();
-  const { formatPrice, userCountry } = useCurrency();
+  const { formatPrice } = useCurrency();
   const baseCurrency = 'GBP';
 
   const [filter, setFilter] = useState<string>('all');
@@ -19,9 +17,7 @@ const Store: React.FC = () => {
 
   const products = useMemo(() => {
     let list = config.products.filter(p => p.enabled);
-    if (filter === 'digital') list = list.filter(p => p.type === 'digital');
-    else if (filter === 'physical') list = list.filter(p => p.type === 'physical');
-    else if (filter !== 'all') list = list.filter(p => p.category === filter);
+    if (filter !== 'all') list = list.filter(p => p.category === filter);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(p => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.tags.some(t => t.toLowerCase().includes(q)));
@@ -56,7 +52,7 @@ const Store: React.FC = () => {
 
         <div className="flex flex-col md:flex-row gap-4 mb-8">
           <div className="flex flex-wrap gap-2 flex-1">
-            {(['all', 'digital', 'physical', ...allCategories]).map(tab => (
+            {(['all', ...allCategories]).map(tab => (
               <button
                 key={tab}
                 onClick={() => setFilter(tab)}
@@ -99,7 +95,6 @@ const Store: React.FC = () => {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {products.map(product => {
-              const isBlocked = isProductRestrictedInCountry(product, userCountry);
               const isOutOfStock = product.stock === 0;
               const isDigitalUnavailable = product.type === 'digital' && !product.digitalFileUrl;
               const salePercent = product.salePercent || 0;
@@ -164,16 +159,12 @@ const Store: React.FC = () => {
                         <div className="py-2.5 text-center text-xs font-orbitron font-bold" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#6b7280' }}>
                           Out of Stock
                         </div>
-                      ) : isBlocked ? (
-                        <div className="flex items-center gap-1.5 py-2.5 justify-center text-xs font-orbitron font-bold" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
-                          <Lock size={11} /> Not available in your region
-                        </div>
                       ) : (
                         <button
                           onClick={() => navigate(`/store/${product.id}`)}
                           disabled={isDigitalUnavailable}
                           className="w-full py-2.5 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105 flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                          style={{ background: product.type === 'digital' ? 'rgba(168,85,247,0.12)' : 'rgba(0,212,255,0.1)', border: product.type === 'digital' ? '1px solid rgba(168,85,247,0.45)' : '1px solid rgba(0,212,255,0.4)', color: product.type === 'digital' ? '#d8b4fe' : '#00d4ff', clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%)' }}
+                          style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.45)', color: '#d8b4fe', clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%)' }}
                         >
                           <ExternalLink size={11} /> View Product
                         </button>

@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@polar-sh/sdk": "^0.47.0",
     "@supabase/supabase-js": "^2.103.0",
     "bootstrap-icons": "^1.13.1",
     "firebase": "^12.10.0",

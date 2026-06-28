@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase, ensureAuth } from '../lib/supabase';
-import { FAQItem, RoadmapProject, AppUser, JoinRequest } from '../types';
+import { supabase, ensureAuth, getAuthToken } from '../lib/supabase';
+import { FAQItem, RoadmapProject, AppUser, JoinRequest, TeamTask, TaskChecklist, TaskColumn } from '../types';
 import { AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
 import {
   DiscordUser,
@@ -24,7 +24,8 @@ interface DataContextType {
   discordLogout: () => void;
   // Panel state
   isAdminOpen: boolean;
-  openAdmin: () => void;
+  adminForcePasswordGate: boolean;
+  openAdmin: (options?: { forcePasswordGate?: boolean }) => void;
   closeAdmin: () => void;
   isMemberPanelOpen: boolean;
   openMemberPanel: () => void;
@@ -49,6 +50,17 @@ interface DataContextType {
   reorderProjects: (ids: string[]) => void;
   reorderSections: (projectId: string, ids: string[]) => void;
   reorderSteps: (projectId: string, sectionId: string, ids: string[]) => void;
+  // Team tasks
+  teamTasks: TeamTask[];
+  teamTasksLoading: boolean;
+  addTeamTask: (input: { projectId: string; title: string; description?: string; assigneeDiscordId?: string | null; columnId?: string | null; }) => Promise<void>;
+  updateTeamTask: (taskId: string, patch: Partial<Pick<TeamTask, 'title' | 'description' | 'columnId' | 'assigneeDiscordId' | 'sortOrder' | 'checklists'>>) => Promise<void>;
+  removeTeamTask: (taskId: string) => Promise<void>;
+  // Task columns (Trello-style lists)
+  taskColumns: TaskColumn[];
+  addTaskColumn: (input: { projectId: string; title: string; color?: string; sortOrder?: number; }) => Promise<TaskColumn | null>;
+  updateTaskColumn: (columnId: string, patch: Partial<Pick<TaskColumn, 'title' | 'color' | 'sortOrder'>>) => Promise<void>;
+  removeTaskColumn: (columnId: string) => Promise<void>;
   // Users & Requests
   appUsers: AppUser[];
   requests: JoinRequest[];
@@ -62,6 +74,25 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 const OWNER_SESSION_KEY = 'wahaj_owner_verified';
+
+const apiBase = (import.meta.env.VITE_STRIPE_API_BASE || '').replace(/\/$/, '');
+
+const claimDiscordRoles = async (discordId: string) => {
+  const flagKey = `discord_roles_claimed_${discordId}`;
+  if (localStorage.getItem(flagKey)) return;
+  try {
+    const token = await getAuthToken();
+    if (!token) return;
+    const res = await fetch(`${apiBase}/api/discord/claim-roles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: '{}',
+    });
+    if (res.ok) localStorage.setItem(flagKey, '1');
+  } catch (error) {
+    console.warn('Failed to claim Discord roles:', error);
+  }
+};
 
 const INITIAL_FAQ: FAQItem[] = [
   {
@@ -129,6 +160,29 @@ const rowToAppUser = (row: Record<string, unknown>): AppUser => ({
   createdAt: row.created_at as number,
 });
 
+const rowToTeamTask = (row: Record<string, unknown>): TeamTask => ({
+  id: row.id as string,
+  projectId: row.project_id as string,
+  columnId: (row.column_id as string | null) ?? null,
+  title: row.title as string,
+  description: (row.description as string | null) ?? '',
+  assigneeDiscordId: (row.assignee_discord_id as string | null) ?? null,
+  createdByDiscordId: (row.created_by_discord_id as string | null) ?? null,
+  sortOrder: Number(row.sort_order ?? 0),
+  checklists: (row.checklists as TaskChecklist[] | null) ?? [],
+  createdAt: row.created_at as string,
+  updatedAt: row.updated_at as string,
+});
+
+const rowToTaskColumn = (row: Record<string, unknown>): TaskColumn => ({
+  id: row.id as string,
+  projectId: row.project_id as string,
+  title: row.title as string,
+  color: (row.color as string | null) ?? '#64748b',
+  sortOrder: Number(row.sort_order ?? 0),
+  createdAt: row.created_at as string,
+});
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [faqData, setFaqData] = useState<FAQItem[]>(() => {
     try { const s = localStorage.getItem('wahaj_faq'); return s ? JSON.parse(s) : INITIAL_FAQ; } catch { return INITIAL_FAQ; }
@@ -139,6 +193,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [adminForcePasswordGate, setAdminForcePasswordGate] = useState(false);
   const [isMemberPanelOpen, setIsMemberPanelOpen] = useState(false);
 
   // Auth state
@@ -159,6 +214,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Users & Requests from Supabase
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [requests, setRequests] = useState<JoinRequest[]>([]);
+  const [teamTasks, setTeamTasks] = useState<TeamTask[]>([]);
+  const [teamTasksLoading, setTeamTasksLoading] = useState(true);
+  const [taskColumns, setTaskColumns] = useState<TaskColumn[]>([]);
   const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID;
 
   useEffect(() => {
@@ -233,14 +291,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         try {
           if (!supabaseSession) await ensureAuth();
-          await supabase.from('discord_users').upsert({
+          const linkedAuthId = supabaseSession?.user && !supabaseSession.user.is_anonymous
+            ? supabaseSession.user.id
+            : null;
+          const ownerPayload: Record<string, unknown> = {
             discord_id: user.id,
             username: user.global_name || user.username,
             avatar: user.avatar,
             role: 'owner',
             project_ids: [],
             created_at: Date.now(),
-          });
+          };
+          if (linkedAuthId) ownerPayload.auth_user_id = linkedAuthId;
+          await supabase.from('discord_users').upsert(ownerPayload);
+          if (linkedAuthId) claimDiscordRoles(user.id);
         } catch (error) {
           console.error('Failed to sync owner user record:', error);
         }
@@ -248,9 +312,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      localStorage.removeItem(OWNER_SESSION_KEY);
+
       const syncUser = async () => {
         // Always ensure Supabase auth before DB operations
         await ensureAuth();
+        const { data: { session: liveSession } } = await supabase.auth.getSession();
+        const linkedAuthId = liveSession?.user && !liveSession.user.is_anonymous
+          ? liveSession.user.id
+          : null;
         const { data: userRow } = await supabase
           .from('discord_users')
           .select('*')
@@ -261,6 +331,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setCurrentAppUser(appUser);
           setRole(appUser.role);
           setPortalSyncError('');
+          if (linkedAuthId && (userRow as Record<string, unknown>).auth_user_id !== linkedAuthId) {
+            await supabase
+              .from('discord_users')
+              .update({ auth_user_id: linkedAuthId })
+              .eq('discord_id', user.id);
+          }
         } else {
           // New user — create a pending access request
           const pendingUser: AppUser = {
@@ -271,18 +347,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             projectIds: [],
             createdAt: Date.now(),
           };
-          await supabase.from('discord_users').upsert({
+          const pendingPayload: Record<string, unknown> = {
             discord_id: user.id,
             username: pendingUser.username,
             avatar: pendingUser.avatar,
             role: 'pending',
             project_ids: [],
             created_at: pendingUser.createdAt,
-          });
+          };
+          if (linkedAuthId) pendingPayload.auth_user_id = linkedAuthId;
+          await supabase.from('discord_users').upsert(pendingPayload);
           setCurrentAppUser(pendingUser);
           setRole('pending');
           setPortalSyncError('');
         }
+        if (linkedAuthId) claimDiscordRoles(user.id);
       };
 
       try {
@@ -334,16 +413,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { supabase.removeChannel(channel); };
   }, [discordUser?.id, role]);
 
-  useEffect(() => {
-    if ((role === 'owner' || role === 'admin' || isOwnerAccount) && isMemberPanelOpen) {
-      setIsMemberPanelOpen(false);
-      setIsAdminOpen(true);
-    }
-  }, [role, isMemberPanelOpen, isOwnerAccount]);
-
   // Supabase real-time listeners for admin/owner user lists
   useEffect(() => {
-    if (!supabaseSession || (role !== 'owner' && role !== 'admin')) {
+    if (!supabaseSession || !role || role === 'pending') {
       setAppUsers([]);
       return;
     }
@@ -416,6 +488,110 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const loadTeamTasks = async () => {
+      setTeamTasksLoading(true);
+      try {
+        await ensureAuth();
+        const { data, error } = await supabase
+          .from('team_tasks')
+          .select('*')
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true });
+        if (cancelled) return;
+        if (error) {
+          console.error('Supabase team tasks load error:', error);
+          setTeamTasks([]);
+          setTeamTasksLoading(false);
+          return;
+        }
+        setTeamTasks((data || []).map(row => rowToTeamTask(row as Record<string, unknown>)));
+        setTeamTasksLoading(false);
+
+        channel = supabase.channel('team-tasks')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'team_tasks' }, async () => {
+            const { data: nextData, error: nextError } = await supabase
+              .from('team_tasks')
+              .select('*')
+              .order('sort_order', { ascending: true })
+              .order('created_at', { ascending: true });
+            if (cancelled || nextError) {
+              if (nextError) console.error('Supabase team tasks refresh error:', nextError);
+              return;
+            }
+            setTeamTasks((nextData || []).map(row => rowToTeamTask(row as Record<string, unknown>)));
+          })
+          .subscribe();
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Supabase team tasks auth/setup error:', error);
+          setTeamTasks([]);
+          setTeamTasksLoading(false);
+        }
+      }
+    };
+
+    if (supabaseAuthReady) loadTeamTasks();
+
+    return () => {
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [supabaseAuthReady]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const loadTaskColumns = async () => {
+      try {
+        await ensureAuth();
+        const { data, error } = await supabase
+          .from('task_columns')
+          .select('*')
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true });
+        if (cancelled) return;
+        if (error) {
+          console.error('Supabase task columns load error:', error);
+          setTaskColumns([]);
+          return;
+        }
+        setTaskColumns((data || []).map(row => rowToTaskColumn(row as Record<string, unknown>)));
+
+        channel = supabase.channel('task-columns')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'task_columns' }, async () => {
+            const { data: nextData, error: nextError } = await supabase
+              .from('task_columns')
+              .select('*')
+              .order('sort_order', { ascending: true })
+              .order('created_at', { ascending: true });
+            if (cancelled || nextError) {
+              if (nextError) console.error('Supabase task columns refresh error:', nextError);
+              return;
+            }
+            setTaskColumns((nextData || []).map(row => rowToTaskColumn(row as Record<string, unknown>)));
+          })
+          .subscribe();
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Supabase task columns auth/setup error:', error);
+          setTaskColumns([]);
+        }
+      }
+    };
+
+    if (supabaseAuthReady) loadTaskColumns();
+
+    return () => {
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [supabaseAuthReady]);
+
+  useEffect(() => {
     localStorage.setItem('wahaj_faq', JSON.stringify(faqData));
   }, [faqData]);
 
@@ -436,20 +612,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Panel functions
-  const openAdmin = () => {
+  const openAdmin = (options?: { forcePasswordGate?: boolean }) => {
     setIsMemberPanelOpen(false);
+    setAdminForcePasswordGate(Boolean(options?.forcePasswordGate));
     setIsAdminOpen(true);
   };
 
-  const closeAdmin = () => setIsAdminOpen(false);
+  const closeAdmin = () => {
+    setIsAdminOpen(false);
+    setAdminForcePasswordGate(false);
+  };
 
   const openMemberPanel = () => {
-    if (role === 'owner' || role === 'admin' || isOwnerAccount || localStorage.getItem(OWNER_SESSION_KEY) === '1') {
-      openAdmin();
-    } else {
-      setIsAdminOpen(false);
-      setIsMemberPanelOpen(true);
-    }
+    setIsAdminOpen(false);
+    setAdminForcePasswordGate(false);
+    setIsMemberPanelOpen(true);
   };
 
   const closeMemberPanel = () => setIsMemberPanelOpen(false);
@@ -563,6 +740,67 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
   };
 
+  const addTeamTask = async (input: { projectId: string; title: string; description?: string; assigneeDiscordId?: string | null; columnId?: string | null; }) => {
+    await ensureAuth();
+    const { error } = await supabase.from('team_tasks').insert({
+      project_id: input.projectId,
+      column_id: input.columnId ?? null,
+      title: input.title.trim(),
+      description: input.description?.trim() || '',
+      assignee_discord_id: input.assigneeDiscordId || null,
+      created_by_discord_id: discordUser?.id ?? null,
+      sort_order: Date.now(),
+    });
+    if (error) throw error;
+  };
+
+  const updateTeamTask = async (taskId: string, patch: Partial<Pick<TeamTask, 'title' | 'description' | 'columnId' | 'assigneeDiscordId' | 'sortOrder' | 'checklists'>>) => {
+    await ensureAuth();
+    const updateData: Record<string, unknown> = {};
+    if (patch.title !== undefined) updateData.title = patch.title.trim();
+    if (patch.description !== undefined) updateData.description = patch.description.trim();
+    if (patch.columnId !== undefined) updateData.column_id = patch.columnId;
+    if (patch.assigneeDiscordId !== undefined) updateData.assignee_discord_id = patch.assigneeDiscordId;
+    if (patch.sortOrder !== undefined) updateData.sort_order = patch.sortOrder;
+    if (patch.checklists !== undefined) updateData.checklists = patch.checklists;
+    const { error } = await supabase.from('team_tasks').update(updateData).eq('id', taskId);
+    if (error) throw error;
+  };
+
+  const removeTeamTask = async (taskId: string) => {
+    await ensureAuth();
+    const { error } = await supabase.from('team_tasks').delete().eq('id', taskId);
+    if (error) throw error;
+  };
+
+  const addTaskColumn = async (input: { projectId: string; title: string; color?: string; sortOrder?: number; }): Promise<TaskColumn | null> => {
+    await ensureAuth();
+    const { data, error } = await supabase.from('task_columns').insert({
+      project_id: input.projectId,
+      title: input.title.trim(),
+      color: input.color ?? '#64748b',
+      sort_order: input.sortOrder ?? Date.now(),
+    }).select().single();
+    if (error) throw error;
+    return data ? rowToTaskColumn(data as Record<string, unknown>) : null;
+  };
+
+  const updateTaskColumn = async (columnId: string, patch: Partial<Pick<TaskColumn, 'title' | 'color' | 'sortOrder'>>) => {
+    await ensureAuth();
+    const updateData: Record<string, unknown> = {};
+    if (patch.title !== undefined) updateData.title = patch.title.trim();
+    if (patch.color !== undefined) updateData.color = patch.color;
+    if (patch.sortOrder !== undefined) updateData.sort_order = patch.sortOrder;
+    const { error } = await supabase.from('task_columns').update(updateData).eq('id', columnId);
+    if (error) throw error;
+  };
+
+  const removeTaskColumn = async (columnId: string) => {
+    await ensureAuth();
+    const { error } = await supabase.from('task_columns').delete().eq('id', columnId);
+    if (error) throw error;
+  };
+
   // User & Request management
   const approveRequest = async (discordId: string, assignRole: 'admin' | 'member', projectIds: string[], adminPermissions?: AdminPermissions) => {
     const pendingUser = appUsers.find(u => u.discordId === discordId && u.role === 'pending');
@@ -627,6 +865,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       discordLogin,
       discordLogout,
       isAdminOpen,
+      adminForcePasswordGate,
       openAdmin,
       closeAdmin,
       isMemberPanelOpen,
@@ -650,6 +889,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       reorderProjects,
       reorderSections,
       reorderSteps,
+      teamTasks,
+      teamTasksLoading,
+      addTeamTask,
+      updateTeamTask,
+      removeTeamTask,
+      taskColumns,
+      addTaskColumn,
+      updateTaskColumn,
+      removeTaskColumn,
       appUsers,
       requests,
       approveRequest,

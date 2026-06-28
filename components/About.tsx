@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
-import { OWNER_DISCORD_ID } from '../lib/discord';
 
 const SETUP_IMAGE_URL = 'https://image2url.com/images/1764855565391-0a72f241-20cc-4bfc-844f-3769bacb6171.jpg';
 const SETUP_FALLBACK_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(
@@ -33,23 +32,12 @@ const About: React.FC = () => {
   const [clickCount, setClickCount] = useState(0);
   const [ownerClickCount, setOwnerClickCount] = useState(0);
   const [setupImageSrc, setSetupImageSrc] = useState(SETUP_IMAGE_URL);
-  const ownerSessionVerified = localStorage.getItem('wahaj_owner_verified') === '1';
-  const isOwnerAccount = discordUser?.id === OWNER_DISCORD_ID || discordUser?.username === OWNER_DISCORD_ID;
-
-  const openCorrectPanel = () => {
-    const hasDiscordSession = !!localStorage.getItem('discord_token');
-    if (role === 'owner' || role === 'admin' || isOwnerAccount || ownerSessionVerified || (authLoading && hasDiscordSession)) {
-      openAdmin();
-      return;
-    }
-    openMemberPanel();
-  };
 
   const handleSecretClick = () => {
     const newCount = clickCount + 1;
     setClickCount(newCount);
     if (newCount === 20) {
-      openCorrectPanel();
+      openMemberPanel();
       setClickCount(0);
     }
   };
@@ -59,7 +47,7 @@ const About: React.FC = () => {
     setOwnerClickCount(newCount);
     if (newCount === 20) {
       localStorage.removeItem('wahaj_owner_verified');
-      openAdmin();
+      openAdmin({ forcePasswordGate: true });
       setOwnerClickCount(0);
     }
   };

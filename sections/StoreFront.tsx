@@ -1,13 +1,11 @@
 import React from 'react';
-import { ShoppingBag, Package, Download, Lock, ExternalLink } from 'lucide-react';
+import { ShoppingBag, Package, Download, ExternalLink } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
-import { isProductRestrictedInCountry } from '@/config/storeConfig';
-
 const StoreFront: React.FC = () => {
   const { config } = useStore();
-  const { formatPrice, userCountry } = useCurrency();
+  const { formatPrice } = useCurrency();
   const navigate = useNavigate();
   const baseCurrency = 'GBP';
 
@@ -38,7 +36,6 @@ const StoreFront: React.FC = () => {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {featured.map(product => {
-            const isBlocked = isProductRestrictedInCountry(product, userCountry);
             const salePercent = product.salePercent || 0;
             const effectivePrice = salePercent > 0 ? Math.round(product.price * (1 - salePercent / 100) * 100) / 100 : product.price;
             const price = formatPrice(effectivePrice, baseCurrency);
@@ -86,19 +83,13 @@ const StoreFront: React.FC = () => {
                       {compareAt && <span className="text-gray-600 text-xs line-through font-mono">{compareAt}</span>}
                     </div>
 
-                    {isBlocked ? (
-                      <div className="flex items-center gap-1.5 py-2 justify-center text-xs font-orbitron font-bold" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
-                        <Lock size={11} /> Not available in your region
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => navigate(`/store/${product.id}`)}
-                        className="w-full py-2.5 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105 flex items-center justify-center gap-1.5"
-                        style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff', clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%)' }}
-                      >
-                        <ExternalLink size={11} /> View Product
-                      </button>
-                    )}
+                    <button
+                      onClick={() => navigate(`/store/${product.id}`)}
+                      className="w-full py-2.5 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105 flex items-center justify-center gap-1.5"
+                      style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.45)', color: '#d8b4fe', clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%)' }}
+                    >
+                      <ExternalLink size={11} /> View Product
+                    </button>
                   </div>
                 </div>
 

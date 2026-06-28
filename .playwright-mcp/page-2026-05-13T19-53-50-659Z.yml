@@ -1,0 +1,27 @@
+- generic [active]:
+  - generic [ref=e1]:
+    - img "WahajPlayz" [ref=e2]
+    - paragraph [ref=e3]: Loading up
+    - paragraph [ref=e4]: Membership
+  - complementary [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - paragraph [ref=e13]: Your Cart
+          - heading "0 items" [level=2] [ref=e14]
+        - button [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+      - generic [ref=e20]:
+        - img [ref=e21]
+        - paragraph [ref=e24]: Your cart is empty
+        - paragraph [ref=e25]: Add something from the product page and it will appear here.
+      - generic [ref=e26]:
+        - generic [ref=e27]:
+          - generic [ref=e28]: Subtotal
+          - generic [ref=e29]: £0.00
+        - button "Continue Shopping" [ref=e30] [cursor=pointer]
+        - button "Preparing Sign-In..." [disabled] [ref=e31]
+  - link "Support" [ref=e32] [cursor=pointer]:
+    - /url: /#/donate
+    - img [ref=e33]
+    - text: Support

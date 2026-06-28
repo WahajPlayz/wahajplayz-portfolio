@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ArrowLeft, CreditCard, Link2, LogOut, Newspaper, Unlink } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
 import { redirectToDiscordOAuth } from '@/lib/discord';
-import { openMembershipBillingPortal } from '@/lib/stripeCheckout';
+import { openMembershipBillingPortal, verifyMembershipCheckout } from '@/lib/stripeCheckout';
 import { useUserMemberships } from '@/hooks/useUserMemberships';
 
 const formatLabel = (value: string) => value
@@ -16,6 +17,35 @@ const ProfilePage: React.FC = () => {
   const { memberships, loading: membershipLoading } = useUserMemberships();
   const [billingPortalLoading, setBillingPortalLoading] = useState(false);
   const [billingPortalError, setBillingPortalError] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState('');
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const checkoutId = params.get('checkout_id');
+    if (!checkoutId) return;
+
+    let cancelled = false;
+    setVerifying(true);
+    setVerifyError('');
+    verifyMembershipCheckout(checkoutId)
+      .catch((error) => {
+        if (!cancelled) setVerifyError(error instanceof Error ? error.message : 'Failed to confirm membership.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setVerifying(false);
+        // Clear the URL param so a refresh doesn't re-verify
+        const url = new URL(window.location.href);
+        const hashUrl = new URL('http://x/' + url.hash.slice(1));
+        hashUrl.searchParams.delete('checkout_id');
+        url.hash = '#' + hashUrl.pathname + (hashUrl.search ? hashUrl.search : '');
+        window.history.replaceState({}, '', url.toString());
+      });
+
+    return () => { cancelled = true; };
+  }, [location.search]);
 
   if (!user) {
     return (
@@ -37,9 +67,9 @@ const ProfilePage: React.FC = () => {
     setBillingPortalError('');
     setBillingPortalLoading(true);
     try {
-      await openMembershipBillingPortal();
+      await openMembershipBillingPortal(activeMembership?.subscriptionId ?? undefined);
     } catch (error) {
-      setBillingPortalError(error instanceof Error ? error.message : 'Failed to open Stripe billing portal.');
+      setBillingPortalError(error instanceof Error ? error.message : 'Failed to open subscription portal.');
       setBillingPortalLoading(false);
     }
   };
@@ -52,6 +82,8 @@ const ProfilePage: React.FC = () => {
   const providerLabel = user.app_metadata?.provider || user.user_metadata?.iss || 'google';
   const activeMembership = useMemo(() => membershipList.find((item) => item.status === 'active') ?? membershipList[0] ?? null, [membershipList]);
   const canManageSubscription = !!activeMembership?.subscriptionId;
+  const hasActiveMembership = membershipList.some((item) => item.status === 'active');
+  const needsDiscordLink = hasActiveMembership && !discordUser;
 
   const displayName = user.user_metadata?.full_name || user.user_metadata?.name || 'Anonymous';
   const avatarSrc = user.user_metadata?.avatar_url || user.user_metadata?.picture || null;
@@ -65,6 +97,35 @@ const ProfilePage: React.FC = () => {
         </a>
 
         <h1 className="font-orbitron font-black text-4xl mb-10" style={{ color: '#00d4ff' }}>PROFILE</h1>
+
+        {needsDiscordLink && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 mb-6 font-mono text-xs"
+            style={{ background: 'rgba(88,101,242,0.08)', border: '1px solid rgba(88,101,242,0.35)', color: '#c7d2fe' }}>
+            <div>
+              <p className="font-orbitron text-sm" style={{ color: '#5865f2' }}>CLAIM YOUR DISCORD ROLE</p>
+              <p className="text-gray-400 mt-1">Connect your Discord account and we'll assign your member role on the server automatically.</p>
+            </div>
+            <button onClick={redirectToDiscordOAuth}
+              className="flex items-center gap-2 px-4 py-2 font-orbitron text-xs tracking-widest uppercase transition-all hover:scale-105 self-start sm:self-auto"
+              style={{ background: 'rgba(88,101,242,0.2)', border: '1px solid rgba(88,101,242,0.5)', color: '#5865f2' }}>
+              <Link2 size={14} /> Connect Discord
+            </button>
+          </div>
+        )}
+
+        {verifying && (
+          <div className="flex items-center gap-3 p-4 mb-6 font-mono text-xs"
+            style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.25)', color: '#d8b4fe' }}>
+            <div className="w-4 h-4 rounded-full border-2 border-purple-400 border-t-transparent animate-spin" />
+            Activating your membership...
+          </div>
+        )}
+        {verifyError && (
+          <div className="p-4 mb-6 font-mono text-xs"
+            style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#fca5a5' }}>
+            {verifyError}
+          </div>
+        )}
 
         <div className="p-6 mb-6" style={{ background: 'rgba(0,212,255,0.05)', border: '1px solid rgba(0,212,255,0.2)', clipPath: 'polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%)' }}>
           <div className="flex items-center gap-4 mb-4">

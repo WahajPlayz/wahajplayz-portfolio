@@ -49,7 +49,7 @@ const StickyMembershipBar: React.FC = () => {
       {/* Left buttons */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => navigate('/membership')}
+          onClick={() => navigate('/support?tab=membership')}
           className="flex items-center gap-1.5 px-3 py-1 text-xs font-orbitron font-bold tracking-widest uppercase transition-all hover:scale-105"
           style={{
             background: 'rgba(99,102,241,0.15)',
@@ -62,7 +62,7 @@ const StickyMembershipBar: React.FC = () => {
           <span className="hidden sm:inline">Membership</span>
         </button>
         <button
-          onClick={() => navigate('/store')}
+          onClick={() => navigate('/support?tab=shop')}
           className="flex items-center gap-1.5 px-3 py-1 text-xs font-orbitron font-bold tracking-widest uppercase transition-all hover:scale-105"
           style={{
             background: 'rgba(0,212,255,0.08)',
@@ -72,10 +72,10 @@ const StickyMembershipBar: React.FC = () => {
           }}
         >
           <ShoppingBag size={12} />
-          <span className="hidden sm:inline">Store</span>
+          <span className="hidden sm:inline">Shop</span>
         </button>
         <button
-          onClick={() => navigate('/donate')}
+          onClick={() => navigate('/support')}
           className="flex items-center gap-1.5 px-3 py-1 text-xs font-orbitron font-bold tracking-widest uppercase transition-all hover:scale-105"
           style={{
             background: 'rgba(0,212,255,0.08)',
@@ -85,7 +85,7 @@ const StickyMembershipBar: React.FC = () => {
           }}
         >
           <Coffee size={12} />
-          <span className="hidden sm:inline">Support & Donate</span>
+          <span className="hidden sm:inline">Support Hub</span>
         </button>
       </div>
 
