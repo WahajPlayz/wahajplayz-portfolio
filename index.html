@@ -242,9 +242,6 @@
           '': 'Website',
           'posts': 'Posts',
           'profile': 'Profile',
-          'membership': 'Membership',
-          'donate': 'Donation',
-          'donate/success': 'Donation',
           'store': 'Store',
           'download': 'Download',
           'messages': 'Messages'
@@ -258,48 +255,4 @@
     <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
-<style>
-  /* Hide any leftover ko-fi iframe */
-  iframe[src*="ko-fi"] { display: none !important; }
-
-  #custom-support-btn {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 20px;
-    background: rgba(168,85,247,0.12);
-    border: 1px solid rgba(168,85,247,0.5);
-    color: #a855f7;
-    font-family: 'Orbitron', sans-serif;
-    font-weight: 700;
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    text-decoration: none;
-    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
-    box-shadow: 0 0 20px rgba(168,85,247,0.25);
-    transition: all 0.25s ease;
-    cursor: pointer;
-  }
-  #custom-support-btn:hover {
-    background: rgba(168,85,247,0.22);
-    border-color: rgba(168,85,247,0.8);
-    box-shadow: 0 0 35px rgba(168,85,247,0.45);
-    transform: translateY(-2px) scale(1.03);
-  }
-  #custom-support-btn svg {
-    flex-shrink: 0;
-  }
-</style>
-
-<a id="custom-support-btn" href="/#/donate">
-  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-  </svg>
-  Support
-</a>
 </html>

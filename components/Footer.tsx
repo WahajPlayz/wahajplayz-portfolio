@@ -1,6 +1,4 @@
 import React from 'react';
-import { Heart, Brush } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 
 const socialLinks = [
   { href: 'https://www.youtube.com/@WahajPlayz20', label: 'YouTube', icon: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>, hoverBg: 'rgba(255,0,0,0.15)', hoverBorder: 'rgba(255,0,0,0.4)' },
@@ -9,8 +7,6 @@ const socialLinks = [
 ];
 
 const Footer: React.FC = () => {
-  const navigate = useNavigate();
-
   return (
     <footer className="relative overflow-hidden pt-16 pb-10" style={{ background: '#0a0b0f', borderTop: '1px solid rgba(0,212,255,0.1)' }}>
       <div className="absolute inset-0 grid-bg opacity-20 pointer-events-none" />
@@ -53,20 +49,6 @@ const Footer: React.FC = () => {
 
           {/* CTA row */}
           <div className="flex flex-col sm:flex-row gap-4 mb-12">
-            <button
-              onClick={() => navigate('/donate')}
-              className="flex items-center gap-2 px-6 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105"
-              style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.4)', color: '#a855f7', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}>
-              <Heart size={14} fill="currentColor" />
-              Support
-            </button>
-            <button
-              onClick={() => navigate('/commissions')}
-              className="flex items-center gap-2 px-6 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105"
-              style={{ background: 'rgba(236,72,153,0.1)', border: '1px solid rgba(236,72,153,0.4)', color: '#ec4899', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}>
-              <Brush size={14} />
-              Commissions
-            </button>
             <a href="https://discord.com/invite/JMgSaKj6st" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-2 px-6 py-3 font-orbitron font-bold text-xs tracking-widest uppercase transition-all hover:scale-105"
               style={{ background: 'rgba(88,101,242,0.1)', border: '1px solid rgba(88,101,242,0.4)', color: '#7289da', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}>

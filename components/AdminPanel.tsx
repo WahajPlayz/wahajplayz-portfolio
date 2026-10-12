@@ -3,24 +3,12 @@ import { useData } from '../context/DataContext';
 import { useSupportData } from '../context/SupportContext';
 import { useStore } from '../context/StoreContext';
 import { StoreProduct, StoreConfig } from '../config/storeConfig';
-import { Tier, AdminPermissions } from '../config/ownerConfig';
+import { AdminPermissions } from '../config/ownerConfig';
 import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search, MessageSquare, Send, Gamepad2, Sparkles, Wrench, Zap, Code, ListChecks, Map } from 'lucide-react';
 import { ensureAuth, getAuthToken, supabase, FUNCTIONS_URL } from '../lib/supabase';
 import { uploadToGitHub } from '../lib/githubStorage';
 import { OWNER_DISCORD_ID } from '../lib/discord';
 import TaskBoard from './TaskBoard';
-
-const blankTier = (): Tier => ({
-  id: 'tier-' + Date.now(),
-  name: '', icon: '⭐', description: '',
-  imageUrl: '',
-  accentColour: '#a855f7', isPopular: false, memberCount: 0,
-  monthlyPrice: 0, yearlyPrice: 0, lifetimePrice: 0, lifetimeEnabled: true,
-  stripeMonthlyUrl: '', stripeYearlyUrl: '', stripeLifetimeUrl: '',
-  discordRoleIds: [], lifetimeDiscordRoleIds: [],
-  benefits: [], lifetimeExtraBenefits: [],
-});
-
 
 // Resize + compress images before upload. Skips non-images and already-small files.
 const compressImage = (file: File, maxDim = 1920, quality = 0.82): Promise<File> =>
@@ -62,10 +50,8 @@ const STORAGE_RULES_SNIPPET = `-- Supabase Storage: set bucket policies in the S
 const FIRESTORE_RULES_SNIPPET = `-- Supabase RLS policies (run in SQL editor or via migrations):
 -- support_config: public read, anon/service write
 -- discord_users: anon read/write (for portal sync)
--- memberships: user read (auth.uid = user_id), service write
 -- digital_purchases: user read (auth.uid = user_id), service write
--- contact_messages: service write (API), anon read for admin
--- donations: public read, service write`;
+-- contact_messages: service write (API), anon read for admin`;
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string') {
@@ -94,18 +80,14 @@ const moveInArray = (ids: string[], id: string, direction: 'up' | 'down') => {
 const buildAvatarUrl = (discordId: string, avatar: string | null) =>
   avatar ? `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.png?size=128` : null;
 const OWNER_SESSION_KEY = 'wahaj_owner_verified';
-const permissionOrder: (keyof AdminPermissions)[] = ['roadmap', 'faq', 'members', 'requests', 'goal', 'membership', 'posts', 'donation', 'store', 'commissions'];
+const permissionOrder: (keyof AdminPermissions)[] = ['roadmap', 'faq', 'members', 'requests', 'posts', 'store'];
 const permissionLabels: Record<keyof AdminPermissions, { title: string; description: string }> = {
   roadmap: { title: 'Roadmap & Projects', description: 'Edit roadmap projects, sections, and task progress.' },
   faq: { title: 'FAQ Manager', description: 'Create and remove FAQ entries.' },
   members: { title: 'Members', description: 'View members and manage their assigned projects.' },
   requests: { title: 'Requests', description: 'Approve or reject incoming team portal requests.' },
-  goal: { title: 'Goal Bar', description: 'Change the support goal, milestones, and copy.' },
-  membership: { title: 'Membership', description: 'Edit tiers, pricing, and membership page content.' },
-  posts: { title: 'Posts', description: 'Create, edit, and publish member or public posts.' },
-  donation: { title: 'Donations', description: 'Manage donation settings and donate page content.' },
+  posts: { title: 'Posts', description: 'Create, edit, and publish posts.' },
   store: { title: 'Store', description: 'Manage storefront products and digital delivery assets.' },
-  commissions: { title: 'Commissions', description: 'Manage commission services, requests, and portfolio gallery.' },
 };
 
 const AdminPanel: React.FC = () => {
@@ -148,7 +130,7 @@ const AdminPanel: React.FC = () => {
     removeUser,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'goal' | 'membership' | 'posts' | 'donation' | 'store' | 'commissions' | 'orders' | 'permissions'>('roadmap');
+  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'posts' | 'store' | 'orders' | 'permissions'>('roadmap');
   const [roadmapSubTab, setRoadmapSubTab] = useState<'roadmap' | 'board'>('roadmap');
   const [boardProjectId, setBoardProjectId] = useState<string>('');
   const [newFaqQ, setNewFaqQ] = useState('');
@@ -215,7 +197,7 @@ const AdminPanel: React.FC = () => {
   };
 
   // Support data
-  const { config, saveMembership, savePosts, saveGoals, saveDonation, savePageContent, saveAdminPermissions, saveCommissions } = useSupportData();
+  const { config, savePosts, saveAdminPermissions } = useSupportData();
   const [approveAdminPermissions, setApproveAdminPermissions] = useState<AdminPermissions>(config.adminPermissions);
 
   // Store data
@@ -232,54 +214,14 @@ const AdminPanel: React.FC = () => {
   });
   const setP = (patch: Partial<StoreProduct>) => setEditingProduct(ep => ep ? { ...ep, ...patch } : ep);
 
-  // Membership editor
-  const [editingTierId, setEditingTierId] = useState<string | null>(null);
-  const [tierDraft, setTierDraft] = useState<Tier | null>(null);
-  const [membershipDraft, setMembershipDraft] = useState(config.membership);
-  const [newBenefit, setNewBenefit] = useState('');
-  const [newLifetimeBenefit, setNewLifetimeBenefit] = useState('');
-  const [membershipSaving, setMembershipSaving] = useState(false);
-  const [membershipUploadError, setMembershipUploadError] = useState('');
-  const [membershipUploadStatus, setMembershipUploadStatus] = useState('');
   const [roadmapUploadStatus, setRoadmapUploadStatus] = useState<Record<string, string>>({});
-
-  // Discord guild roles (fetched from the bot to power the role picker)
-  type GuildRole = { id: string; name: string; color: number; position: number; managed: boolean };
-  const [guildRoles, setGuildRoles] = useState<GuildRole[] | null>(null);
-  const [guildRolesError, setGuildRolesError] = useState('');
-  const [guildRolesLoading, setGuildRolesLoading] = useState(false);
-
-  useEffect(() => {
-    if (activeTab !== 'membership' || guildRoles) return;
-    let cancelled = false;
-    const load = async () => {
-      setGuildRolesLoading(true);
-      setGuildRolesError('');
-      try {
-        const token = await getAuthToken();
-        if (!token) throw new Error('You must be signed in.');
-        const res = await fetch(FUNCTIONS_URL + '/discord-roles', {
-          headers: { Authorization: 'Bearer ' + token },
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.error || ('HTTP ' + res.status));
-        if (!cancelled) setGuildRoles(Array.isArray(data.roles) ? data.roles : []);
-      } catch (error) {
-        if (!cancelled) setGuildRolesError(error instanceof Error ? error.message : 'Failed to load Discord roles.');
-      } finally {
-        if (!cancelled) setGuildRolesLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [activeTab, guildRoles]);
 
   // Posts editor
   type PostDraft = typeof config.posts[0];
   const blankPost = (): PostDraft => ({
     id: 'post-' + Date.now(),
     title: '', pinned: false, excerpt: '', content: '',
-    coverImage: '', visibility: 'public', allowedTiers: [],
+    coverImage: '',
     tags: [], publishedAt: new Date().toISOString().slice(0, 10), attachments: [],
   });
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -289,22 +231,6 @@ const AdminPanel: React.FC = () => {
   const [postUploadError, setPostUploadError] = useState('');
   const [postUploadStatus, setPostUploadStatus] = useState('');
 
-  // Goal editor
-  const [goalsDraft, setGoalsDraft] = useState(config.goals ?? []);
-  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
-  const [goalSaving, setGoalSaving] = useState(false);
-  const [newMilestoneAmount, setNewMilestoneAmount] = useState('');
-  const [newMilestoneLabel, setNewMilestoneLabel] = useState('');
-
-  // Page content editors
-  const [membershipPageDraft, setMembershipPageDraft] = useState(config.membershipPage);
-  const [donatePageDraft, setDonatePageDraft] = useState(config.donatePage);
-  const [pageContentSaving, setPageContentSaving] = useState(false);
-
-  // Donate editor
-  const [donateDraft, setDonateDraft] = useState(config.donation);
-  const [newPresetAmount, setNewPresetAmount] = useState('');
-  const [donateSaving, setDonateSaving] = useState(false);
   const [storeUploadError, setStoreUploadError] = useState('');
   const [storeUploadSuccess, setStoreUploadSuccess] = useState('');
   const [storeUploadStatus, setStoreUploadStatus] = useState('');
@@ -329,20 +255,6 @@ const AdminPanel: React.FC = () => {
     amount_total: number; currency: string; status: string; created_at: string;
   }[]>([]);
   const [physicalOrdersLoading, setPhysicalOrdersLoading] = useState(false);
-  // Commissions state
-  const [commissionsSubTab, setCommissionsSubTab] = useState<'manage'|'requests'>('manage');
-  const [commissionsDraft, setCommissionsDraft] = useState<typeof config.commissionsConfig | null>(null);
-  const [commissionsUploadStatus, setCommissionsUploadStatus] = useState<Record<string, string>>({});
-  const [commissionsSaving, setCommissionsSaving] = useState(false);
-  const [commissionRequests, setCommissionRequests] = useState<{id:string;service:string;description:string;contact:string;created_at:string;read:boolean}[]>([]);
-  const [commissionRequestsLoading, setCommissionRequestsLoading] = useState(false);
-
-  // Donor conversations state
-  const [donorConvos, setDonorConvos] = useState<{id:string;transactionId:string;donorName:string;donorEmail:string|null;amountGBP:number;message:string;createdAt:number;replied:boolean;lastReplyAt:number|null}[]>([]);
-  const [donorConvosLoading, setDonorConvosLoading] = useState(false);
-  const [expandedDonorId, setExpandedDonorId] = useState<string|null>(null);
-  const [donorReplyText, setDonorReplyText] = useState<Record<string,string>>({});
-  const [donorReplying, setDonorReplying] = useState<string|null>(null);
 
   const loadPhysicalOrders = async () => {
     setPhysicalOrdersLoading(true);
@@ -419,54 +331,6 @@ const AdminPanel: React.FC = () => {
     } catch { /* ignore */ }
   };
 
-  const loadCommissionRequests = async () => {
-    setCommissionRequestsLoading(true);
-    try {
-      const { data } = await supabase
-        .from('commission_requests')
-        .select('*')
-        .order('created_at', { ascending: false });
-      setCommissionRequests((data || []) as any[]);
-    } finally { setCommissionRequestsLoading(false); }
-  };
-
-  const markCommissionRead = async (req: typeof commissionRequests[0]) => {
-    if (req.read) return;
-    try {
-      await supabase.from('commission_requests').update({ read: true }).eq('id', req.id);
-      setCommissionRequests(r => r.map(x => x.id === req.id ? { ...x, read: true } : x));
-    } catch { /* ignore */ }
-  };
-
-  const loadDonorConvos = async () => {
-    setDonorConvosLoading(true);
-    try {
-      await ensureAuth();
-      const token = (await getAuthToken()) || '';
-      const res = await fetch(`${ADMIN_API}/donations-list`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      setDonorConvos(data.conversations || []);
-    } finally { setDonorConvosLoading(false); }
-  };
-
-  const sendDonorReply = async (convId: string) => {
-    const text = donorReplyText[convId]?.trim();
-    if (!text) return;
-    setDonorReplying(convId);
-    try {
-      await ensureAuth();
-      const token = (await getAuthToken()) || '';
-      await fetch(`${ADMIN_API}/donations-reply`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: convId, text }),
-      });
-      setDonorConvos(prev => prev.map(c => c.id === convId ? { ...c, replied: true, lastReplyAt: Date.now() } : c));
-      setDonorReplyText(prev => ({ ...prev, [convId]: '' }));
-      setExpandedDonorId(null);
-    } finally { setDonorReplying(null); }
-  };
-
   const [rulesCopied, setRulesCopied] = useState(false);
   const [rulesCopiedFirestore, setRulesCopiedFirestore] = useState(false);
   const [permsSaving, setPermsSaving] = useState(false);
@@ -475,11 +339,6 @@ const AdminPanel: React.FC = () => {
   const [purgeStatus, setPurgeStatus] = useState('');
   const [purgeError, setPurgeError] = useState('');
 
-  useEffect(() => { setGoalsDraft(config.goals ?? []); }, [config.goals]);
-  useEffect(() => { setMembershipDraft(config.membership); }, [config.membership]);
-  useEffect(() => { setMembershipPageDraft(config.membershipPage); }, [config.membershipPage]);
-  useEffect(() => { setDonatePageDraft(config.donatePage); }, [config.donatePage]);
-  useEffect(() => { setDonateDraft(config.donation); }, [config.donation]);
   useEffect(() => { setDefaultAdminPermsDraft(config.adminPermissions); }, [config.adminPermissions]);
   useEffect(() => {
     if (approveRole === 'admin') {
@@ -726,32 +585,20 @@ const AdminPanel: React.FC = () => {
                       )}
                     </button>
                   ))}
-                  {(['goal', 'membership', 'posts', 'donation'] as const).filter(tab => canAccessTab(tab)).map(tab => (
+                  {canAccessTab('posts') && (
                     <button
-                      key={tab}
-                      onClick={() => { setActiveTab(tab); if (tab === 'donation') loadDonorConvos(); }}
-                      className={`px-4 py-2 rounded-lg transition-colors font-medium capitalize ${activeTab === tab ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                      onClick={() => setActiveTab('posts')}
+                      className={`px-4 py-2 rounded-lg transition-colors font-medium capitalize ${activeTab === 'posts' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
-                      {tab === 'goal' ? 'Goal Bar' : tab === 'membership' ? 'Membership' : tab === 'posts' ? 'Posts' : 'Donations'}
+                      Posts
                     </button>
-                  ))}
+                  )}
                   {canAccessTab('store') && (
                     <button
                       onClick={() => setActiveTab('store')}
                       className={`px-4 py-2 rounded-lg transition-colors font-medium flex items-center gap-1.5 ${activeTab === 'store' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
                       <ShoppingBag size={14} />Store
-                    </button>
-                  )}
-                  {canAccessTab('commissions') && (
-                    <button
-                      onClick={() => { setActiveTab('commissions'); if (!commissionsDraft) setCommissionsDraft(JSON.parse(JSON.stringify(config.commissionsConfig))); loadCommissionRequests(); }}
-                      className={`px-4 py-2 rounded-lg transition-colors font-medium flex items-center gap-1.5 ${activeTab === 'commissions' ? 'bg-pink-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                    >
-                      <Sparkles size={14} />Commissions
-                      {commissionRequests.filter(r => !r.read).length > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-pink-500 text-white text-xs font-bold flex items-center justify-center">{commissionRequests.filter(r => !r.read).length}</span>
-                      )}
                     </button>
                   )}
                   {isOwner && (
@@ -1311,599 +1158,6 @@ const AdminPanel: React.FC = () => {
               </div>
             )}
 
-            {/* ── GOAL BAR TAB ── */}
-            {activeTab === 'goal' && (() => {
-              const currencyMap: Record<string, string> = { GBP: '£', USD: '$', EUR: '€', AUD: 'A$', CAD: 'C$', JPY: '¥', CHF: 'Fr' };
-              const editingGoal = editingGoalId ? goalsDraft.find(g => g.id === editingGoalId) ?? null : null;
-              const setG = (patch: Partial<typeof goalsDraft[0]>) =>
-                setGoalsDraft(prev => prev.map(g => g.id === editingGoalId ? { ...g, ...patch } : g));
-
-              const saveAll = async () => {
-                setGoalSaving(true);
-                await saveGoals(goalsDraft);
-                setGoalSaving(false);
-                setEditingGoalId(null);
-              };
-
-              const addGoal = () => {
-                const newGoal = {
-                  id: 'goal-' + Date.now(),
-                  title: 'New Goal',
-                  enabled: true,
-                  type: 'monthly' as const,
-                  currency: '£',
-                  currencyCode: 'GBP',
-                  target: 500,
-                  raised: 0,
-                  description: '',
-                  milestones: [],
-                };
-                setGoalsDraft(prev => [...prev, newGoal]);
-                setEditingGoalId(newGoal.id);
-              };
-
-              const deleteGoal = (id: string) => {
-                setGoalsDraft(prev => prev.filter(g => g.id !== id));
-                if (editingGoalId === id) setEditingGoalId(null);
-              };
-
-              const addMilestone = () => {
-                if (!editingGoal) return;
-                const amt = parseFloat(newMilestoneAmount);
-                if (!amt || !newMilestoneLabel.trim()) return;
-                const sorted = [...editingGoal.milestones, { amount: amt, label: newMilestoneLabel.trim() }]
-                  .sort((a, b) => a.amount - b.amount);
-                setG({ milestones: sorted });
-                setNewMilestoneAmount('');
-                setNewMilestoneLabel('');
-              };
-
-              return (
-                <div className="space-y-4 pb-12">
-                  <div className="flex justify-between items-center">
-                    <p className="text-white font-bold">Goals ({goalsDraft.length})</p>
-                    <div className="flex gap-2">
-                      <button onClick={addGoal} className="flex items-center gap-1.5 px-3 py-2 bg-purple-600/80 hover:bg-purple-600 text-white rounded-lg text-sm font-bold transition-colors">
-                        <Plus size={14} /> Add Goal
-                      </button>
-                      <button onClick={saveAll} disabled={goalSaving} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors">
-                        <Save size={14} /> {goalSaving ? 'Saving…' : 'Save All'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Goal list */}
-                  {!editingGoalId && (
-                    <div className="space-y-2">
-                      {goalsDraft.length === 0 && <p className="text-gray-500 text-sm font-mono text-center py-8">No goals yet. Click Add Goal.</p>}
-                      {goalsDraft.map(g => {
-                        const pct = g.target > 0 ? Math.min(100, Math.round((g.raised / g.target) * 100)) : 0;
-                        return (
-                          <div key={g.id} className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <input type="checkbox" checked={g.enabled} onChange={e => { setGoalsDraft(prev => prev.map(x => x.id === g.id ? { ...x, enabled: e.target.checked } : x)); }} className="w-4 h-4 accent-purple-500 flex-shrink-0" />
-                                <span className="font-bold text-white text-sm truncate">{g.title}</span>
-                                <span className="text-xs font-mono text-gray-500 flex-shrink-0">{g.currency}{g.raised} / {g.currency}{g.target} · {pct}%</span>
-                              </div>
-                              <div className="flex gap-1 flex-shrink-0">
-                                <button onClick={() => setEditingGoalId(g.id)} className="p-1.5 text-gray-500 hover:text-white transition-colors"><Pencil size={13} /></button>
-                                <button onClick={() => deleteGoal(g.id)} className="p-1.5 text-gray-600 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
-                              </div>
-                            </div>
-                            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg,#00d4ff,#a855f7)' }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Goal editor */}
-                  {editingGoal && (
-                    <div className="space-y-4 p-4 rounded-xl bg-black/20 border border-purple-500/20">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-white">Editing: {editingGoal.title}</p>
-                        <button onClick={() => setEditingGoalId(null)} className="text-gray-500 hover:text-white"><X size={15} /></button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="col-span-2">
-                          <label className="text-xs text-gray-400 mb-1 block">Goal title</label>
-                          <input value={editingGoal.title} onChange={e => setG({ title: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="e.g. Monthly Goal" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Type</label>
-                          <select value={editingGoal.type} onChange={e => setG({ type: e.target.value as 'monthly' | 'one-time' })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500">
-                            <option value="monthly">Monthly</option>
-                            <option value="one-time">One-time</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Currency</label>
-                          <select value={editingGoal.currencyCode} onChange={e => setG({ currencyCode: e.target.value, currency: currencyMap[e.target.value] || e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500">
-                            <option value="GBP">GBP (£)</option>
-                            <option value="USD">USD ($)</option>
-                            <option value="EUR">EUR (€)</option>
-                            <option value="AUD">AUD (A$)</option>
-                            <option value="CAD">CAD (C$)</option>
-                            <option value="JPY">JPY (¥)</option>
-                            <option value="CHF">CHF (Fr)</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Amount raised</label>
-                          <input type="number" min={0} value={editingGoal.raised} onChange={e => setG({ raised: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Target amount</label>
-                          <input type="number" min={1} value={editingGoal.target} onChange={e => setG({ target: parseFloat(e.target.value) || 1 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="text-xs text-gray-400 mb-1 block">Description</label>
-                          <input value={editingGoal.description} onChange={e => setG({ description: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="e.g. Help keep this going" />
-                        </div>
-                        <div className="col-span-2 flex items-center gap-2">
-                          <input type="checkbox" checked={editingGoal.enabled} onChange={e => setG({ enabled: e.target.checked })} className="w-4 h-4 accent-purple-500" id="goal-enabled" />
-                          <label htmlFor="goal-enabled" className="text-gray-300 text-sm cursor-pointer">Show on site</label>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Milestones</p>
-                        <div className="space-y-2 mb-2">
-                          {editingGoal.milestones.map((m, i) => (
-                            <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/20 border border-white/5">
-                              <span className="text-white text-sm font-mono">{editingGoal.currency}{m.amount}</span>
-                              <span className="flex-1 text-gray-400 text-sm">— {m.label}</span>
-                              <button onClick={() => setG({ milestones: editingGoal.milestones.filter((_, j) => j !== i) })} className="text-red-400 hover:text-red-300"><X size={14} /></button>
-                            </div>
-                          ))}
-                          {editingGoal.milestones.length === 0 && <p className="text-gray-600 text-sm">No milestones yet.</p>}
-                        </div>
-                        <div className="flex gap-2">
-                          <input type="number" value={newMilestoneAmount} onChange={e => setNewMilestoneAmount(e.target.value)} className="w-28 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Amount" />
-                          <input value={newMilestoneLabel} onChange={e => setNewMilestoneLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addMilestone()} className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Label (e.g. Hosting covered)" />
-                          <button onClick={addMilestone} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg"><Plus size={14} /></button>
-                        </div>
-                      </div>
-                      <button onClick={saveAll} disabled={goalSaving} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors">
-                        <Save size={14} /> {goalSaving ? 'Saving…' : 'Save All Goals'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* ── MEMBERSHIP TAB ── */}
-
-            {activeTab === 'membership' && (() => {
-              const tiers = membershipDraft.tiers;
-
-              const startEdit = (tier: Tier) => {
-                setTierDraft({ ...tier, benefits: [...tier.benefits], lifetimeExtraBenefits: [...tier.lifetimeExtraBenefits] });
-                setEditingTierId(tier.id);
-                setNewBenefit('');
-                setNewLifetimeBenefit('');
-                setMembershipUploadError('');
-              };
-
-              const startAdd = () => {
-                const t = blankTier();
-                setTierDraft(t);
-                setEditingTierId(t.id);
-                setNewBenefit('');
-                setNewLifetimeBenefit('');
-                setMembershipUploadError('');
-              };
-
-              const cancelEdit = () => {
-                setEditingTierId(null);
-                setTierDraft(null);
-                setMembershipUploadError('');
-                setMembershipUploadStatus('');
-              };
-
-              const saveTier = async () => {
-                if (!tierDraft) return;
-                setMembershipSaving(true);
-                setMembershipUploadError('');
-                try {
-                  const existing = tiers.find(t => t.id === tierDraft.id);
-                  const updated = existing
-                    ? tiers.map(t => t.id === tierDraft.id ? tierDraft : t)
-                    : [...tiers, tierDraft];
-                  const nextMembership = { ...membershipDraft, tiers: updated };
-                  setMembershipDraft(nextMembership);
-                  await saveMembership(nextMembership);
-                  cancelEdit();
-                } catch (error) {
-                  console.error('Failed to save membership tier:', error);
-                  setMembershipUploadError(getErrorMessage(error, 'Failed to save this membership tier.'));
-                } finally {
-                  setMembershipSaving(false);
-                }
-              };
-
-              const deleteTier = async (id: string) => {
-                setMembershipSaving(true);
-                setMembershipUploadError('');
-                const nextMembership = { ...membershipDraft, tiers: tiers.filter(t => t.id !== id) };
-                const previousMembership = membershipDraft;
-                setMembershipDraft(nextMembership);
-                try {
-                  await saveMembership(nextMembership);
-                  if (editingTierId === id) cancelEdit();
-                } catch (error) {
-                  setMembershipDraft(previousMembership);
-                  console.error('Failed to delete membership tier:', error);
-                  setMembershipUploadError(getErrorMessage(error, 'Failed to delete this membership tier.'));
-                } finally {
-                  setMembershipSaving(false);
-                }
-              };
-
-              const d = tierDraft;
-              const set = (patch: Partial<Tier>) => setTierDraft(prev => prev ? { ...prev, ...patch } : prev);
-
-              return (
-                <div className="space-y-4 pb-12">
-                  {/* Page headline editor */}
-                  {!editingTierId && (
-                    <div className="bg-black/30 rounded-xl border border-white/5 p-4 mb-4">
-                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Membership Page Header</p>
-                      <div className="space-y-2 mb-3">
-                        <input
-                          value={membershipPageDraft.headline}
-                          onChange={e => setMembershipPageDraft(p => ({ ...p, headline: e.target.value }))}
-                          className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500"
-                          placeholder="Page headline"
-                        />
-                        <textarea
-                          value={membershipPageDraft.subheading}
-                          onChange={e => setMembershipPageDraft(p => ({ ...p, subheading: e.target.value }))}
-                          rows={2}
-                          className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500 resize-none"
-                          placeholder="Subheading"
-                        />
-                      </div>
-                        <button
-                          onClick={async () => { setPageContentSaving(true); await savePageContent('membershipPage', membershipPageDraft); setPageContentSaving(false); }}
-                        disabled={pageContentSaving}
-                        className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors"
-                      >
-                        <Save size={13} /> {pageContentSaving ? 'Saving…' : 'Save Header'}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Tier list */}
-                  {!editingTierId && (
-                    <>
-                      <div className="flex justify-between items-center">
-                        <p className="text-white font-bold">Membership Tiers ({tiers.length})</p>
-                        <button onClick={startAdd} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-bold transition-colors">
-                          <Plus size={14} /> Add Tier
-                        </button>
-                      </div>
-                      {membershipUploadError && (
-                        <p className="text-sm text-red-400">{membershipUploadError}</p>
-                      )}
-                      {membershipSaving && (
-                        <p className="text-sm text-amber-300">Saving membership changes...</p>
-                      )}
-                      {tiers.length === 0 && (
-                        <p className="text-gray-500 text-sm">No tiers yet. Add one above.</p>
-                      )}
-                      {tiers.map(tier => (
-                        <div key={tier.id} className="flex items-center justify-between p-4 rounded-xl bg-black/30 border border-white/5">
-                          <div className="flex items-center gap-3">
-                            {tier.imageUrl ? (
-                              <img src={tier.imageUrl} alt={tier.name || 'Tier image'} className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-white/10" />
-                            ) : (
-                              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: tier.accentColour }} />
-                            )}
-                            <div>
-                              <p className="text-white font-semibold">{tier.icon} {tier.name || <span className="text-gray-500 italic">Unnamed</span>}</p>
-                              <p className="text-gray-500 text-xs">${tier.monthlyPrice}/mo · ${tier.yearlyPrice}/yr · ${tier.lifetimePrice} lifetime{tier.isPopular ? ' · ⭐ Popular' : ''}</p>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => startEdit(tier)} className="px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg transition-colors flex items-center gap-1">
-                              <Pencil size={12} /> Edit
-                            </button>
-                            <button onClick={() => deleteTier(tier.id)} className="px-3 py-1.5 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors flex items-center gap-1">
-                              <Trash2 size={12} /> Delete
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  )}
-
-                  {/* Tier editor */}
-                  {editingTierId && d && (
-                    <div className="space-y-5 bg-black/30 rounded-2xl border border-purple-500/20 p-6">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-white font-bold text-lg">{tiers.find(t => t.id === d.id) ? 'Edit Tier' : 'New Tier'}</h3>
-                        <button onClick={cancelEdit} className="text-gray-500 hover:text-white"><X size={18} /></button>
-                      </div>
-
-                      {/* Basic info */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Icon (emoji)</label>
-                          <input value={d.icon} onChange={e => set({ icon: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-lg focus:border-purple-500" maxLength={4} />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Tier Name</label>
-                          <input value={d.name} onChange={e => set({ name: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="e.g. Supporter" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-xs text-gray-400 mb-1 block">Description</label>
-                        <input value={d.description} onChange={e => set({ description: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Short description of this tier" />
-                      </div>
-
-                      <div>
-                        <label className="text-xs text-gray-400 mb-2 block">Tier Image (optional)</label>
-                        {d.imageUrl && (
-                          <div className="relative mb-3 w-fit">
-                            <img src={d.imageUrl} alt={d.name || 'Tier image'} className="w-20 h-20 rounded-xl object-cover border border-white/10" />
-                            <button onClick={() => set({ imageUrl: '' })} className="absolute top-2 right-2 p-1 bg-black/70 text-red-400 rounded">
-                              <X size={12} />
-                            </button>
-                          </div>
-                        )}
-                        <label className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg cursor-pointer text-sm transition-colors w-fit">
-                          <input type="file" accept="image/*" className="hidden" onChange={async e => {
-                            const file = e.target.files?.[0];
-                            if (!file || !d) return;
-                            setMembershipUploadError('');
-                            setMembershipUploadStatus('Compressing image...');
-                            const fileToUpload = await compressImage(file);
-                            setMembershipUploadStatus('Authenticating with Firebase Storage...');
-                            try {
-                              const { url, path } = await uploadAsset(
-                                `membership/${d.id}`,
-                                fileToUpload,
-                                (snapshot) => {
-                                  setMembershipUploadStatus(`Uploading tier image: ${formatUploadProgress(snapshot.bytesTransferred, snapshot.totalBytes)}`);
-                                },
-                                setMembershipUploadStatus
-                              );
-                              set({ imageUrl: url });
-                              setMembershipUploadStatus('Tier image upload completed.');
-                            } catch (error) {
-                              console.error('Tier image upload failed:', error);
-                              setMembershipUploadError(getErrorMessage(error, 'Tier image upload failed. Check Firebase Storage rules and bucket settings.'));
-                            } finally {
-                              e.currentTarget.value = '';
-                            }
-                          }} />
-                          Upload Tier Image
-                        </label>
-                        {membershipUploadStatus && <p className="text-amber-300 text-xs mt-2">{membershipUploadStatus}</p>}
-                        {membershipUploadError && <p className="text-red-400 text-xs mt-2">{membershipUploadError}</p>}
-                        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
-                          <div className="flex items-center justify-between gap-3 mb-2">
-                            <p className="text-[11px] uppercase tracking-wider text-gray-400">Firebase Rules</p>
-                            <button onClick={copyStorageRules} className="px-2 py-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/20 transition-colors">
-                              {rulesCopied ? 'Copied!' : 'Copy Both'}
-                            </button>
-                          </div>
-                          <p className="text-xs text-gray-500 mb-1">Enable Anonymous auth, then set these in Firebase Console:</p>
-                          <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-2 mb-1">Storage Rules</p>
-                          <pre className="overflow-x-auto rounded-lg bg-black/40 p-3 text-[11px] leading-relaxed text-cyan-300 whitespace-pre-wrap">{STORAGE_RULES_SNIPPET}</pre>
-                          <p className="text-[11px] text-gray-500 uppercase tracking-wider mt-3 mb-1">Firestore Rules</p>
-                          <pre className="overflow-x-auto rounded-lg bg-black/40 p-3 text-[11px] leading-relaxed text-purple-300 whitespace-pre-wrap">{FIRESTORE_RULES_SNIPPET}</pre>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Accent Colour</label>
-                          <div className="flex gap-2 items-center">
-                            <input type="color" value={d.accentColour} onChange={e => set({ accentColour: e.target.value })} className="w-10 h-10 rounded cursor-pointer bg-transparent border-0" />
-                            <input value={d.accentColour} onChange={e => set({ accentColour: e.target.value })} className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500 font-mono text-sm" />
-                          </div>
-                        </div>
-                        <div className="flex items-end pb-1">
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox" checked={d.isPopular} onChange={e => set({ isPopular: e.target.checked })} className="w-4 h-4 accent-purple-500" />
-                            <span className="text-gray-300 text-sm">Mark as Popular</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Prices */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs text-gray-400 uppercase tracking-wider">Pricing</p>
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={d.lifetimeEnabled !== false}
-                              onChange={e => set({ lifetimeEnabled: e.target.checked })}
-                              className="w-4 h-4 accent-amber-500"
-                            />
-                            <span className="text-gray-300 text-xs">Offer Lifetime (one-time)</span>
-                          </label>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
-                          {[['Monthly (' + (config.goals?.[0]?.currency || '£') + ')', 'monthlyPrice'], ['Yearly (' + (config.goals?.[0]?.currency || '£') + ')', 'yearlyPrice'], ['Lifetime (' + (config.goals?.[0]?.currency || '£') + ')', 'lifetimePrice']].map(([label, key]) => {
-                            const isLifetimeField = key === 'lifetimePrice';
-                            const lifetimeOff = isLifetimeField && d.lifetimeEnabled === false;
-                            return (
-                              <div key={key}>
-                                <label className="text-xs text-gray-500 mb-1 block">{label}</label>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={(d as any)[key]}
-                                  onChange={e => set({ [key]: parseFloat(e.target.value) || 0 } as any)}
-                                  disabled={lifetimeOff}
-                                  className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed"
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Store discount */}
-                      <div>
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Store Discount</p>
-                        <div className="flex items-center gap-3">
-                          <div>
-                            <label className="text-xs text-gray-500 mb-1 block">% off all store products <span className="text-gray-600">(0 = no discount)</span></label>
-                            <input type="number" min={0} max={99} step={1}
-                              value={d.storeDiscountPercent ?? 0}
-                              onChange={e => set({ storeDiscountPercent: Math.min(99, Math.max(0, parseInt(e.target.value) || 0)) })}
-                              className="w-32 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
-                          </div>
-                          {(d.storeDiscountPercent ?? 0) > 0 && (
-                            <p className="text-xs text-purple-400 mt-5">Members on this tier get {d.storeDiscountPercent}% off at checkout</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Checkout mode */}
-                      <div>
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Stripe Checkout</p>
-                        <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                          <p className="text-sm text-gray-200">Memberships now use dynamic Stripe Checkout Sessions.</p>
-                          <p className="text-xs text-gray-500 mt-1">Monthly, yearly, and lifetime purchases inherit the buyer&apos;s selected currency automatically. No Stripe Payment Links are required here anymore.</p>
-                        </div>
-                      </div>
-
-                      {/* Benefits */}
-                      <div>
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Benefits</p>
-                        <div className="space-y-1 mb-2">
-                          {d.benefits.map((b, i) => (
-                            <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/20 border border-white/5">
-                              <span className="flex-1 text-sm text-gray-200">{b.icon} {b.text}</span>
-                              <button onClick={() => set({ benefits: d.benefits.filter((_, j) => j !== i) })} className="text-red-400 hover:text-red-300"><X size={14} /></button>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex gap-2">
-                          <input value={newBenefit} onChange={e => setNewBenefit(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newBenefit.trim()) { set({ benefits: [...d.benefits, { icon: '✅', text: newBenefit.trim(), highlighted: false }] }); setNewBenefit(''); } }} className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-sm focus:border-purple-500" placeholder="Add benefit (press Enter)" />
-                          <button onClick={() => { if (newBenefit.trim()) { set({ benefits: [...d.benefits, { icon: '✅', text: newBenefit.trim(), highlighted: false }] }); setNewBenefit(''); } }} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg"><Plus size={14} /></button>
-                        </div>
-                      </div>
-
-                      {/* Discord roles */}
-                      <div>
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Discord Roles</p>
-                        <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-4">
-                          {guildRolesLoading && (
-                            <p className="text-xs text-gray-500">Loading Discord roles…</p>
-                          )}
-                          {guildRolesError && (
-                            <div className="text-xs text-red-400">
-                              <p className="mb-1">Couldn't load roles from Discord: {guildRolesError}</p>
-                              <p className="text-gray-500">Check that DISCORD_BOT_TOKEN and DISCORD_GUILD_ID are set and the bot is in the server.</p>
-                            </div>
-                          )}
-                          {guildRoles && guildRoles.length === 0 && !guildRolesError && (
-                            <p className="text-xs text-gray-500">Bot can see the server but no assignable roles were returned.</p>
-                          )}
-                          {guildRoles && guildRoles.length > 0 && (() => {
-                            const renderPicker = (
-                              label: string,
-                              hint: string,
-                              selectedIds: string[],
-                              onToggle: (id: string) => void,
-                            ) => (
-                              <div>
-                                <label className="text-xs text-gray-500 mb-2 block">{label}</label>
-                                <div className="max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-2 space-y-1">
-                                  {guildRoles.map(r => {
-                                    const checked = selectedIds.includes(r.id);
-                                    const swatch = r.color
-                                      ? '#' + r.color.toString(16).padStart(6, '0')
-                                      : '#94a3b8';
-                                    return (
-                                      <label key={r.id} className="flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-white/5">
-                                        <input
-                                          type="checkbox"
-                                          checked={checked}
-                                          onChange={() => onToggle(r.id)}
-                                          className="w-4 h-4 accent-purple-500"
-                                        />
-                                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: swatch }} />
-                                        <span className="text-sm text-gray-200 flex-1">{r.name}</span>
-                                        {r.managed && <span className="text-[10px] text-gray-500">managed</span>}
-                                        <span className="text-[10px] text-gray-600 font-mono">{r.id.slice(-6)}</span>
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-                                <p className="text-[11px] text-gray-500 mt-1">{hint}</p>
-                              </div>
-                            );
-
-                            const toggleBase = (id: string) => {
-                              const list = d.discordRoleIds || [];
-                              set({ discordRoleIds: list.includes(id) ? list.filter(x => x !== id) : [...list, id] });
-                            };
-                            const toggleLifetime = (id: string) => {
-                              const list = d.lifetimeDiscordRoleIds || [];
-                              set({ lifetimeDiscordRoleIds: list.includes(id) ? list.filter(x => x !== id) : [...list, id] });
-                            };
-
-                            return (
-                              <>
-                                {renderPicker(
-                                  'Roles to assign on purchase',
-                                  'Auto-assigned on monthly/yearly/lifetime purchases. Removed when the subscription is canceled.',
-                                  d.discordRoleIds || [],
-                                  toggleBase,
-                                )}
-                                {renderPicker(
-                                  'Lifetime-only extra roles',
-                                  'Granted only on lifetime purchases, in addition to the roles above. Never auto-removed.',
-                                  d.lifetimeDiscordRoleIds || [],
-                                  toggleLifetime,
-                                )}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      {/* Lifetime extra benefits */}
-                      <div>
-                        <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider">Lifetime-only Extras</p>
-                        <div className="space-y-1 mb-2">
-                          {d.lifetimeExtraBenefits.map((b, i) => (
-                            <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/20 border border-white/5">
-                              <span className="flex-1 text-sm text-gray-200">{b.icon} {b.text}</span>
-                              <button onClick={() => set({ lifetimeExtraBenefits: d.lifetimeExtraBenefits.filter((_, j) => j !== i) })} className="text-red-400 hover:text-red-300"><X size={14} /></button>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex gap-2">
-                          <input value={newLifetimeBenefit} onChange={e => setNewLifetimeBenefit(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newLifetimeBenefit.trim()) { set({ lifetimeExtraBenefits: [...d.lifetimeExtraBenefits, { icon: '🏆', text: newLifetimeBenefit.trim(), highlighted: true }] }); setNewLifetimeBenefit(''); } }} className="flex-1 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-sm focus:border-purple-500" placeholder="Add lifetime extra (press Enter)" />
-                          <button onClick={() => { if (newLifetimeBenefit.trim()) { set({ lifetimeExtraBenefits: [...d.lifetimeExtraBenefits, { icon: '🏆', text: newLifetimeBenefit.trim(), highlighted: true }] }); setNewLifetimeBenefit(''); } }} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg"><Plus size={14} /></button>
-                        </div>
-                      </div>
-
-                      {/* Save */}
-                      <div className="flex gap-3 pt-2">
-                        <button onClick={saveTier} disabled={membershipSaving || !d.name.trim()} className="flex items-center gap-2 px-6 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-lg font-bold transition-colors">
-                          <Save size={14} /> {membershipSaving ? 'Saving...' : 'Save Tier'}
-                        </button>
-                        <button onClick={cancelEdit} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Cancel</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
 
             {/* ── POSTS TAB ── */}
             {activeTab === 'posts' && (() => {
@@ -1966,7 +1220,6 @@ const AdminPanel: React.FC = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5">
                               {post.pinned && <span className="text-cyan-400 text-xs">📌</span>}
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${post.visibility === 'public' ? 'bg-green-500/20 text-green-400' : post.visibility === 'tier-specific' ? 'bg-amber-500/20 text-amber-400' : 'bg-purple-500/20 text-purple-400'}`}>{post.visibility === 'tier-specific' ? `tiers (${(post.allowedTiers || []).length})` : post.visibility}</span>
                               <span className="text-gray-600 text-xs">{post.publishedAt}</span>
                             </div>
                             <p className="text-white font-semibold truncate">{post.title || <span className="text-gray-500 italic">Untitled</span>}</p>
@@ -1993,49 +1246,10 @@ const AdminPanel: React.FC = () => {
                           <label className="text-xs text-gray-400 mb-1 block">Title</label>
                           <input value={pd.title} onChange={e => setP({ title: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" placeholder="Post title" />
                         </div>
-                        <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Visibility</label>
-                          <select value={pd.visibility} onChange={e => {
-                            const v = e.target.value as PostDraft['visibility'];
-                            setP({ visibility: v, allowedTiers: v !== 'tier-specific' ? [] : pd.allowedTiers });
-                          }} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500">
-                            <option value="public">Public</option>
-                            <option value="members">Members only</option>
-                            <option value="tier-specific">Specific tiers</option>
-                          </select>
-                        </div>
-                        <div>
+                        <div className="col-span-2">
                           <label className="text-xs text-gray-400 mb-1 block">Publish Date</label>
                           <input type="date" value={pd.publishedAt} onChange={e => setP({ publishedAt: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-purple-500" />
                         </div>
-                        {pd.visibility === 'tier-specific' && (
-                          <div className="col-span-2">
-                            <label className="text-xs text-gray-400 mb-2 block uppercase tracking-wider">Which tiers can read this?</label>
-                            {config.membership.tiers.length === 0 ? (
-                              <p className="text-xs text-gray-500">No tiers yet — create tiers in the Membership tab first.</p>
-                            ) : (
-                              <div className="space-y-1">
-                                {config.membership.tiers.map(tier => (
-                                  <label key={tier.id} className="flex items-center gap-3 cursor-pointer select-none p-2 rounded-lg hover:bg-white/5 transition-colors">
-                                    <input
-                                      type="checkbox"
-                                      checked={(pd.allowedTiers || []).includes(tier.id)}
-                                      onChange={e => {
-                                        const next = e.target.checked
-                                          ? [...(pd.allowedTiers || []), tier.id]
-                                          : (pd.allowedTiers || []).filter(id => id !== tier.id);
-                                        setP({ allowedTiers: next });
-                                      }}
-                                      className="w-4 h-4 accent-purple-500 flex-shrink-0"
-                                    />
-                                    <span className="text-sm text-gray-200">{tier.icon} {tier.name}</span>
-                                    <span className="text-xs text-gray-500 ml-auto">{tier.monthlyPrice > 0 ? `£${tier.monthlyPrice}/mo` : 'Free'}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
                       </div>
 
                       <div>
@@ -2123,7 +1337,6 @@ const AdminPanel: React.FC = () => {
                                 fileType: file.name.split('.').pop() || 'file',
                                 sizeLabel: (file.size / 1024 / 1024).toFixed(1) + ' MB',
                                 displayLabel: file.name,
-                                minimumTier: '',
                               };
                               setP({ attachments: [...(pd.attachments || []), newAtt] });
                               setPostUploadStatus('Attachment upload completed.');
@@ -2182,181 +1395,6 @@ const AdminPanel: React.FC = () => {
                       </div>
                     </div>
                   )}
-                </div>
-              );
-            })()}
-
-            {/* ── DONATION TAB ── */}
-            {activeTab === 'donation' && (() => {
-              const dd = donateDraft;
-              const setD = (patch: Partial<typeof dd>) => setDonateDraft(prev => ({ ...prev, ...patch }));
-
-              return (
-                <div className="space-y-6 pb-12">
-                  {/* Donor Messages */}
-                  <div className="bg-black/30 rounded-xl border border-white/5 p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-white font-bold">Donor Messages</p>
-                      <button onClick={loadDonorConvos} className="font-mono text-xs text-gray-500 hover:text-cyan-400 transition-colors">↻ Refresh</button>
-                    </div>
-                    {donorConvosLoading ? (
-                      <p className="font-mono text-xs text-gray-600 text-center py-6">Loading…</p>
-                    ) : donorConvos.length === 0 ? (
-                      <p className="font-mono text-xs text-gray-600 text-center py-6">No donations yet.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {donorConvos.map(conv => {
-                          const isExpanded = expandedDonorId === conv.id;
-                          return (
-                            <div key={conv.id} className="rounded-xl border border-white/8 bg-black/20 overflow-hidden">
-                              {/* Donor summary row */}
-                              <div className="flex items-center gap-3 p-3">
-                                <div className="w-9 h-9 rounded-full bg-cyan-500/15 flex items-center justify-center flex-shrink-0 text-base">
-                                  {conv.donorName?.[0]?.toUpperCase() || '?'}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-white text-sm font-bold truncate">{conv.donorName || 'Anonymous'}</span>
-                                    <span className="text-cyan-400 text-xs font-mono font-bold">£{Number(conv.amountGBP || 0).toFixed(2)}</span>
-                                    {conv.replied && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-mono">replied</span>}
-                                  </div>
-                                  {conv.donorEmail && <p className="text-xs text-gray-500 truncate">{conv.donorEmail}</p>}
-                                  <p className="text-[11px] text-gray-600">{new Date(conv.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                                </div>
-                                {conv.message && (
-                                  <button
-                                    onClick={() => setExpandedDonorId(isExpanded ? null : conv.id)}
-                                    className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 text-xs font-bold transition-colors"
-                                  >
-                                    {isExpanded ? 'Close' : 'Reply'}
-                                  </button>
-                                )}
-                              </div>
-                              {/* Message + reply area */}
-                              {isExpanded && (
-                                <div className="border-t border-white/5 p-3 space-y-3">
-                                  {conv.message && (
-                                    <div className="rounded-lg bg-white/5 border border-white/8 px-3 py-2 text-sm text-gray-300 italic">
-                                      "{conv.message}"
-                                    </div>
-                                  )}
-                                  <div className="space-y-2">
-                                    <textarea
-                                      value={donorReplyText[conv.id] || ''}
-                                      onChange={e => setDonorReplyText(prev => ({ ...prev, [conv.id]: e.target.value }))}
-                                      rows={3}
-                                      placeholder="Write a reply… (will be emailed to the donor)"
-                                      className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white text-sm focus:border-cyan-500 resize-none placeholder-gray-600"
-                                    />
-                                    <button
-                                      onClick={() => sendDonorReply(conv.id)}
-                                      disabled={donorReplying === conv.id || !donorReplyText[conv.id]?.trim()}
-                                      className="flex items-center gap-1.5 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors"
-                                    >
-                                      <Send size={13} /> {donorReplying === conv.id ? 'Sending…' : 'Send Reply'}
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Donate page header editor */}
-                  <div className="bg-black/30 rounded-xl border border-white/5 p-4">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Donate Page Header</p>
-                    <div className="space-y-2 mb-3">
-                      <input
-                        value={donatePageDraft.headline}
-                        onChange={e => setDonatePageDraft(p => ({ ...p, headline: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500"
-                        placeholder="Page headline"
-                      />
-                      <textarea
-                        value={donatePageDraft.subheading}
-                        onChange={e => setDonatePageDraft(p => ({ ...p, subheading: e.target.value }))}
-                        rows={2}
-                        className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500 resize-none"
-                        placeholder="Subheading"
-                      />
-                    </div>
-                    <button
-                      onClick={async () => { setPageContentSaving(true); await savePageContent('donatePage', donatePageDraft); setPageContentSaving(false); }}
-                      disabled={pageContentSaving}
-                      className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors"
-                    >
-                      <Save size={13} /> {pageContentSaving ? 'Saving…' : 'Save Header'}
-                    </button>
-                  </div>
-
-                  {/* Donation panel settings */}
-                  <div className="bg-black/30 rounded-xl border border-white/5 p-4 space-y-4">
-                    <div className="flex justify-between items-center">
-                      <p className="text-white font-bold">Donation Panel Settings</p>
-                      <button
-                        onClick={async () => { setDonateSaving(true); await saveDonation(donateDraft); setDonateSaving(false); }}
-                        disabled={donateSaving}
-                        className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white rounded-lg text-sm font-bold transition-colors"
-                      >
-                        <Save size={13} /> {donateSaving ? 'Saving…' : 'Save Changes'}
-                      </button>
-                    </div>
-
-                    <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Heading</label>
-                      <input value={dd.heading} onChange={e => setD({ heading: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500" placeholder="Buy Me a Coffee ☕" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 mb-1 block">Subheading</label>
-                      <input value={dd.subheading} onChange={e => setD({ subheading: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500" placeholder="No pressure. Every bit helps keep this going." />
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                      <p className="text-xs text-gray-400 uppercase tracking-wider">Stripe Checkout</p>
-                      <p className="text-sm text-gray-200 mt-2">Donations now use dynamic Stripe Checkout Sessions.</p>
-                      <p className="text-xs text-gray-500 mt-1">Supporters will be charged in the currency they pick on the site, so there is no single Stripe URL to paste here anymore.</p>
-                    </div>
-
-                    {/* Preset amounts */}
-                    <div>
-                      <label className="text-xs text-gray-400 mb-2 block uppercase tracking-wider">Preset Amounts</label>
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {dd.presetAmounts.map((amt, i) => (
-                          <span key={i} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-sm font-mono">
-                            £{amt}
-                            <button onClick={() => setD({ presetAmounts: dd.presetAmounts.filter((_, j) => j !== i) })} className="text-cyan-500 hover:text-red-400 ml-0.5"><X size={12} /></button>
-                          </span>
-                        ))}
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          value={newPresetAmount}
-                          onChange={e => setNewPresetAmount(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              const n = parseFloat(newPresetAmount);
-                              if (n > 0) { setD({ presetAmounts: [...dd.presetAmounts, n].sort((a, b) => a - b) }); setNewPresetAmount(''); }
-                            }
-                          }}
-                          className="w-32 px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-cyan-500"
-                          placeholder="Amount"
-                        />
-                        <button
-                          onClick={() => {
-                            const n = parseFloat(newPresetAmount);
-                            if (n > 0) { setD({ presetAmounts: [...dd.presetAmounts, n].sort((a, b) => a - b) }); setNewPresetAmount(''); }
-                          }}
-                          className="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg"
-                        >
-                          <Plus size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               );
             })()}
@@ -2491,11 +1529,7 @@ const AdminPanel: React.FC = () => {
                 {/* Discounts */}
                 <div className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-3">
                   <p className="text-xs text-gray-400 uppercase tracking-wider">Discounts</p>
-                  <p className="text-xs text-gray-400">Membership discounts are set per tier in the <span className="text-purple-400">Membership</span> tab — each tier can have its own store discount %. The best discount across all of a buyer's active tiers is applied at checkout.</p>
-                  <p className="text-xs text-gray-500 mt-1">Coupon codes: create them in <span className="text-cyan-500">Stripe Dashboard → Coupons</span>. Buyers can enter them on the Stripe checkout page automatically.</p>
-                  <button onClick={() => saveStore(storeData)} className="px-4 py-2 rounded-lg font-orbitron text-xs font-bold tracking-widest uppercase transition-all" style={{ background: 'rgba(0,212,255,0.15)', border: '1px solid rgba(0,212,255,0.4)', color: '#00d4ff' }}>
-                    <Save size={12} className="inline mr-1.5" />Save Discount Settings
-                  </button>
+                  <p className="text-xs text-gray-500">Coupon codes: create them in <span className="text-cyan-500">Stripe Dashboard → Coupons</span>. Buyers can enter them on the Stripe checkout page automatically.</p>
                 </div>
 
                 {/* Product editor or list */}
@@ -2574,7 +1608,7 @@ const AdminPanel: React.FC = () => {
                       </div>
                       <div className="p-4 grid grid-cols-3 gap-3" style={{ background: 'rgba(0,0,0,0.25)' }}>
                         <div>
-                          <label className="text-xs text-gray-400 mb-1 block">Price ({(config.goals?.[0]?.currency || '£')})</label>
+                          <label className="text-xs text-gray-400 mb-1 block">Price ({'£'})</label>
                           <input type="number" min={0} step={0.01} value={editingProduct.price} onChange={e => setP({ price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-black/50 border border-white/10 outline-none text-white focus:border-yellow-500 text-sm" />
                         </div>
                         <div>
@@ -2903,7 +1937,7 @@ const AdminPanel: React.FC = () => {
                           <p className="font-bold text-sm text-white truncate">{product.name || 'Unnamed Product'}</p>
                           <div className="flex items-center gap-2 text-xs font-mono">
                             <span style={{ color: product.type === 'digital' ? '#a855f7' : '#00d4ff' }}>{product.type}</span>
-                            <span className="text-gray-600">{(config.goals?.[0]?.currency || '£')}{product.price}</span>
+                            <span className="text-gray-600">{'£'}{product.price}</span>
                             {!product.enabled && <span className="text-red-500">hidden</span>}
                             {product.featured && <span className="text-yellow-500">★ featured</span>}
                             {product.type === 'physical' && (
@@ -2926,194 +1960,6 @@ const AdminPanel: React.FC = () => {
               </div>
             )}
 
-            {/* ── COMMISSIONS TAB ── */}
-            {activeTab === 'commissions' && canAccessTab('commissions') && (() => {
-              const draft = commissionsDraft ?? config.commissionsConfig;
-              const blankService = () => ({ id: 'svc-' + Date.now(), title: '', price: '', basePrice: 0, description: '', sampleImages: [] as string[], available: true });
-
-              const updateDraft = (fn: (d: typeof config.commissionsConfig) => typeof config.commissionsConfig) => {
-                setCommissionsDraft(prev => fn(JSON.parse(JSON.stringify(prev ?? config.commissionsConfig))));
-              };
-
-              const handleSvcImageUpload = async (svcId: string, file: File, imgIdx: number) => {
-                const key = `${svcId}-${imgIdx}`;
-                setCommissionsUploadStatus(s => ({ ...s, [key]: 'Uploading…' }));
-                try {
-                  const compressed = await compressImage(file);
-                  const { url } = await uploadAsset(`commissions/${svcId}`, compressed);
-                  updateDraft(d => {
-                    const svc = d.services.find(s => s.id === svcId);
-                    if (svc) {
-                      const imgs = [...svc.sampleImages];
-                      imgs[imgIdx] = url;
-                      svc.sampleImages = imgs;
-                    }
-                    return d;
-                  });
-                  setCommissionsUploadStatus(s => ({ ...s, [key]: '' }));
-                } catch {
-                  setCommissionsUploadStatus(s => ({ ...s, [key]: 'Upload failed' }));
-                }
-              };
-
-              const handlePortfolioUpload = async (file: File) => {
-                setCommissionsUploadStatus(s => ({ ...s, portfolio: 'Uploading…' }));
-                try {
-                  const compressed = await compressImage(file);
-                  const { url } = await uploadAsset('commissions/portfolio', compressed);
-                  updateDraft(d => { d.portfolioImages = [...d.portfolioImages, url]; return d; });
-                  setCommissionsUploadStatus(s => ({ ...s, portfolio: '' }));
-                } catch {
-                  setCommissionsUploadStatus(s => ({ ...s, portfolio: 'Upload failed' }));
-                }
-              };
-
-              const handleSave = async () => {
-                setCommissionsSaving(true);
-                try { await saveCommissions(draft); } finally { setCommissionsSaving(false); }
-              };
-
-              const unread = commissionRequests.filter(r => !r.read).length;
-
-              return (
-                <div className="flex flex-col gap-4">
-                  {/* Sub-tabs */}
-                  <div className="flex gap-1 border-b pb-3" style={{ borderColor: 'rgba(255,255,255,0.07)' }}>
-                    <button onClick={() => setCommissionsSubTab('manage')} className={`font-orbitron font-bold text-xs px-3 py-1.5 rounded transition-colors ${commissionsSubTab === 'manage' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>Manage</button>
-                    <button onClick={() => { setCommissionsSubTab('requests'); if (commissionRequests.length === 0) loadCommissionRequests(); }} className={`font-orbitron font-bold text-xs px-3 py-1.5 rounded transition-colors flex items-center gap-1.5 ${commissionsSubTab === 'requests' ? 'text-white bg-white/10' : 'text-gray-500 hover:text-white'}`}>
-                      Requests
-                      {unread > 0 && <span className="w-4 h-4 rounded-full bg-pink-500 text-white text-[10px] font-bold flex items-center justify-center">{unread}</span>}
-                    </button>
-                    <button onClick={() => commissionsSubTab === 'requests' ? loadCommissionRequests() : undefined} className="font-mono text-xs text-gray-500 hover:text-pink-400 ml-auto transition-colors">↻ Refresh</button>
-                  </div>
-
-                  {/* ── MANAGE SUB-TAB ── */}
-                  {commissionsSubTab === 'manage' && (
-                    <div className="flex flex-col gap-6">
-                      {/* Global settings */}
-                      <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                        <h3 className="font-orbitron font-bold text-sm text-white mb-4">Settings</h3>
-                        <div className="flex items-center gap-3 mb-4">
-                          <button
-                            onClick={() => updateDraft(d => { d.isOpen = !d.isOpen; return d; })}
-                            className={`relative w-11 h-6 rounded-full overflow-hidden transition-colors ${draft.isOpen ? 'bg-green-500' : 'bg-gray-700'}`}
-                          >
-                            <span className={`absolute top-1 left-0 w-4 h-4 rounded-full bg-white transition-transform ${draft.isOpen ? 'translate-x-6' : 'translate-x-1'}`} />
-                          </button>
-                          <span className="text-sm text-gray-300">{draft.isOpen ? 'Commissions Open' : 'Commissions Closed'}</span>
-                        </div>
-                        <div className="flex flex-col gap-3">
-                          <input value={draft.heading} onChange={e => updateDraft(d => { d.heading = e.target.value; return d; })} placeholder="Page heading" className="w-full bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
-                          <input value={draft.subheading} onChange={e => updateDraft(d => { d.subheading = e.target.value; return d; })} placeholder="Page subheading" className="w-full bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
-                        </div>
-                      </div>
-
-                      {/* Services */}
-                      <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                        <div className="flex items-center justify-between mb-4">
-                          <h3 className="font-orbitron font-bold text-sm text-white">Services</h3>
-                          <button onClick={() => updateDraft(d => { d.services = [...d.services, blankService()]; return d; })} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-orbitron font-bold text-pink-400 transition-colors hover:text-pink-300" style={{ border: '1px solid rgba(236,72,153,0.3)', borderRadius: 6 }}>
-                            <Plus size={12} /> Add Service
-                          </button>
-                        </div>
-                        {draft.services.length === 0 && <p className="text-gray-600 text-xs font-mono">No services yet. Add one above.</p>}
-                        <div className="flex flex-col gap-5">
-                          {draft.services.map((svc, si) => (
-                            <div key={svc.id} className="p-4 rounded-lg relative" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                              <button onClick={() => updateDraft(d => { d.services = d.services.filter((_,i) => i !== si); return d; })} className="absolute top-3 right-3 text-red-400 hover:text-red-300 transition-colors"><Trash2 size={14} /></button>
-                              <div className="grid grid-cols-2 gap-3 mb-3">
-                                <input value={svc.title} onChange={e => updateDraft(d => { d.services[si].title = e.target.value; return d; })} placeholder="Service title" className="bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
-                                <input value={svc.price} onChange={e => updateDraft(d => { d.services[si].price = e.target.value; return d; })} placeholder='Display price e.g. "£50+"' className="bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
-                              </div>
-                              <div className="mb-3">
-                                <label className="block text-xs text-gray-500 mb-1">Base price (£ GBP) for Stripe checkout</label>
-                                <input type="number" min="0" step="0.01" value={svc.basePrice ?? 0} onChange={e => updateDraft(d => { d.services[si].basePrice = parseFloat(e.target.value) || 0; return d; })} placeholder="e.g. 50" className="w-full bg-transparent text-white text-sm p-2 rounded outline-none" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
-                                <p className="text-xs text-gray-600 mt-1">Set to 0 to disable ordering for this service.</p>
-                              </div>
-                              <textarea value={svc.description} onChange={e => updateDraft(d => { d.services[si].description = e.target.value; return d; })} placeholder="Description" rows={2} className="w-full bg-transparent text-white text-sm p-2 rounded outline-none resize-none mb-3" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
-                              <div className="flex items-center gap-2 mb-3">
-                                <button onClick={() => updateDraft(d => { d.services[si].available = !d.services[si].available; return d; })} className={`relative w-9 h-5 rounded-full overflow-hidden transition-colors ${svc.available ? 'bg-green-500' : 'bg-gray-700'}`}>
-                                  <span className={`absolute top-0.5 left-0 w-4 h-4 rounded-full bg-white transition-transform ${svc.available ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                                </button>
-                                <span className="text-xs text-gray-400">{svc.available ? 'Available' : 'Unavailable'}</span>
-                              </div>
-                              {/* Sample images */}
-                              <p className="text-xs text-gray-500 font-orbitron uppercase tracking-widest mb-2">Sample Images (up to 3)</p>
-                              <div className="flex gap-2 flex-wrap">
-                                {[0, 1, 2].map(imgIdx => (
-                                  <div key={imgIdx} className="relative w-20 h-20 rounded overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.3)' }}>
-                                    {svc.sampleImages[imgIdx] ? (
-                                      <>
-                                        <img src={svc.sampleImages[imgIdx]} className="w-full h-full object-cover" />
-                                        <button onClick={() => updateDraft(d => { const imgs = [...d.services[si].sampleImages]; imgs.splice(imgIdx, 1); d.services[si].sampleImages = imgs; return d; })} className="absolute top-0.5 right-0.5 bg-black/70 rounded text-red-400 p-0.5"><X size={10} /></button>
-                                      </>
-                                    ) : (
-                                      <label className="flex items-center justify-center w-full h-full cursor-pointer text-gray-600 hover:text-pink-400 transition-colors">
-                                        <Plus size={18} />
-                                        <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleSvcImageUpload(svc.id, f, imgIdx); e.target.value = ''; }} />
-                                      </label>
-                                    )}
-                                    {commissionsUploadStatus[`${svc.id}-${imgIdx}`] && <p className="text-[10px] text-pink-400 mt-1">{commissionsUploadStatus[`${svc.id}-${imgIdx}`]}</p>}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Portfolio images */}
-                      <div className="p-4 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                        <h3 className="font-orbitron font-bold text-sm text-white mb-4">Portfolio Gallery</h3>
-                        <div className="flex flex-wrap gap-3 mb-3">
-                          {draft.portfolioImages.map((url, pi) => (
-                            <div key={pi} className="relative w-24 h-24 rounded overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-                              <img src={url} className="w-full h-full object-cover" />
-                              <button onClick={() => updateDraft(d => { d.portfolioImages = d.portfolioImages.filter((_,i) => i !== pi); return d; })} className="absolute top-0.5 right-0.5 bg-black/70 rounded text-red-400 p-0.5"><X size={10} /></button>
-                            </div>
-                          ))}
-                          <label className="flex items-center justify-center w-24 h-24 rounded cursor-pointer text-gray-600 hover:text-pink-400 transition-colors" style={{ border: '1px dashed rgba(255,255,255,0.12)', background: 'rgba(0,0,0,0.3)' }}>
-                            <Plus size={22} />
-                            <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handlePortfolioUpload(f); e.target.value = ''; }} />
-                          </label>
-                        </div>
-                        {commissionsUploadStatus.portfolio && <p className="text-xs text-pink-400">{commissionsUploadStatus.portfolio}</p>}
-                      </div>
-
-                      <button onClick={handleSave} disabled={commissionsSaving} className="flex items-center justify-center gap-2 w-full py-3 font-orbitron font-bold text-sm tracking-widest uppercase transition-all hover:scale-[1.01] disabled:opacity-50" style={{ background: 'rgba(236,72,153,0.12)', border: '1px solid rgba(236,72,153,0.4)', color: '#ec4899', clipPath: 'polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)' }}>
-                        <Save size={14} />{commissionsSaving ? 'Saving…' : 'Save Changes'}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* ── REQUESTS SUB-TAB ── */}
-                  {commissionsSubTab === 'requests' && (
-                    <div className="flex flex-col gap-3">
-                      {commissionRequestsLoading && <p className="text-gray-500 text-xs font-mono text-center py-8">Loading requests…</p>}
-                      {!commissionRequestsLoading && commissionRequests.length === 0 && (
-                        <p className="text-gray-600 text-xs font-mono text-center py-8">No commission requests yet.</p>
-                      )}
-                      {commissionRequests.map(req => (
-                        <div key={req.id} onClick={() => markCommissionRead(req)} className="p-4 rounded-lg cursor-pointer transition-all" style={{ background: req.read ? 'rgba(255,255,255,0.02)' : 'rgba(236,72,153,0.05)', border: `1px solid ${req.read ? 'rgba(255,255,255,0.07)' : 'rgba(236,72,153,0.25)'}` }}>
-                          <div className="flex items-start justify-between gap-3 mb-2">
-                            <div className="flex items-center gap-2">
-                              {!req.read && <span className="w-2 h-2 rounded-full bg-pink-500 shrink-0" />}
-                              <span className="font-orbitron font-bold text-sm text-white">{req.service}</span>
-                            </div>
-                            <span className="text-xs text-gray-600 font-mono shrink-0">{new Date(req.created_at).toLocaleDateString()}</span>
-                          </div>
-                          <p className="text-gray-400 text-sm leading-relaxed mb-3 whitespace-pre-wrap">{req.description}</p>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-orbitron text-gray-500 uppercase tracking-widest">Contact:</span>
-                            <span className="text-xs text-pink-400">{req.contact}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
 
             {/* ── ORDERS & MESSAGES TAB ── */}
             {activeTab === 'orders' && isOwner && (

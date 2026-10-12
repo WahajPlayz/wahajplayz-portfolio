@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useRef } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import About from './components/About';
@@ -9,9 +9,7 @@ import Experience from './components/Experience';
 import FAQ from './components/FAQ';
 import Community from './components/Community';
 import Footer from './components/Footer';
-import StickyMembershipBar from './components/StickyMembershipBar';
 import DiscordLink from './components/DiscordLink';
-import SupportDonation from './sections/SupportDonation';
 import PostsFeed from './sections/PostsFeed';
 import StoreFront from './sections/StoreFront';
 import { DataProvider, useData } from './context/DataContext';
@@ -33,12 +31,8 @@ const StorePage = lazy(() => import('./pages/Store'));
 const StoreProductDetailPage = lazy(() => import('./pages/StoreProductDetail'));
 const DownloadPage = lazy(() => import('./pages/Download'));
 const ProfilePage = lazy(() => import('./pages/Profile'));
-const DonationSuccessPage = lazy(() => import('./pages/DonationSuccess'));
-const HubPage = lazy(() => import('./pages/Hub'));
 const MessagesPage = lazy(() => import('./pages/Messages'));
 const OrderSuccessPage = lazy(() => import('./pages/OrderSuccess'));
-const CommissionsPage = lazy(() => import('./pages/Commissions'));
-const CommissionSuccessPage = lazy(() => import('./pages/CommissionSuccess'));
 
 // Konami code: ↑↑↓↓←→←→ba — secret owner panel access
 const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
@@ -54,16 +48,10 @@ const PAGE_NAMES: Record<string, string> = {
   '': 'Website',
   'posts': 'Posts',
   'profile': 'Profile',
-  'membership': 'Membership',
-  'support': 'Support Hub',
-  'donate': 'Donation',
-  'donate/success': 'Donation',
   'store': 'Store',
   'store/success': 'Order Confirmed',
   'download': 'Download',
   'messages': 'Messages',
-  'commissions': 'Commissions',
-  'commissions/success': 'Commission Confirmed',
 };
 
 const RouteLoader: React.FC = () => {
@@ -138,7 +126,6 @@ const AppInner: React.FC = () => {
 
   return (
     <div className="min-h-screen text-white selection:bg-purple-500 selection:text-white relative" style={{ backgroundColor: '#0d0e12' }}>
-      <StickyMembershipBar />
       <Header />
       <main>
         <Hero />
@@ -148,7 +135,6 @@ const AppInner: React.FC = () => {
         <Creations />
         <Experience />
         <FAQ />
-        <SupportDonation />
         <PostsFeed />
         <StoreFront />
       </main>
@@ -201,17 +187,11 @@ const App: React.FC = () => (
                       <Route path="/" element={<AppInner />} />
                       <Route path="/posts" element={<PostsPage />} />
                       <Route path="/profile" element={<ProfilePage />} />
-                      <Route path="/support" element={<HubPage />} />
-                      <Route path="/membership" element={<Navigate to="/support?tab=membership" replace />} />
-                      <Route path="/donate" element={<Navigate to="/support" replace />} />
-                      <Route path="/donate/success" element={<DonationSuccessPage />} />
                       <Route path="/store" element={<StorePage />} />
                       <Route path="/store/:productId" element={<StoreProductDetailPage />} />
                       <Route path="/store/success" element={<OrderSuccessPage />} />
                       <Route path="/download" element={<DownloadPage />} />
                       <Route path="/messages" element={<MessagesPage />} />
-                      <Route path="/commissions" element={<CommissionsPage />} />
-                      <Route path="/commissions/success" element={<CommissionSuccessPage />} />
                     </Routes>
                     <CartDrawer />
                     <GlobalAuthModal />

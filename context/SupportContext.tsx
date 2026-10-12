@@ -1,38 +1,21 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, ensureAuth } from '../lib/supabase';
-import { ownerConfig, OwnerConfig, GoalItem, AdminPermissions, defaultAdminPermissions, CommissionsConfig, defaultCommissionsConfig } from '../config/ownerConfig';
+import { ownerConfig, OwnerConfig, AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
 
 interface SupportContextType {
   config: OwnerConfig;
-  saveGoals: (goals: GoalItem[]) => Promise<void>;
-  saveMembership: (m: OwnerConfig['membership']) => Promise<void>;
-  saveDonation: (d: OwnerConfig['donation']) => Promise<void>;
   savePosts: (posts: OwnerConfig['posts']) => Promise<void>;
-  savePageContent: (field: 'membershipPage' | 'donatePage', data: { headline: string; subheading: string }) => Promise<void>;
   saveAdminPermissions: (perms: AdminPermissions) => Promise<void>;
-  saveCommissions: (cfg: CommissionsConfig) => Promise<void>;
   loading: boolean;
 }
 
 const SupportContext = createContext<SupportContextType | undefined>(undefined);
 
-// rowToConfig maps snake_case DB row → OwnerConfig camelCase, merging defaults
 const rowToConfig = (row: Record<string, unknown> | null): OwnerConfig => {
   if (!row) return ownerConfig;
   return {
-    goals: (() => {
-      if (Array.isArray(row.goals) && (row.goals as unknown[]).length > 0) return row.goals as GoalItem[];
-      const legacy = (row as Record<string, unknown>).goal;
-      if (legacy) return [{ id: 'goal-default', title: (legacy as Record<string, unknown>).type === 'monthly' ? 'Monthly Goal' : 'Goal', ...(legacy as object) }] as GoalItem[];
-      return ownerConfig.goals;
-    })(),
-    membership: Object.assign({}, ownerConfig.membership, (row.membership as object) ?? {}),
-    donation: Object.assign({}, ownerConfig.donation, (row.donation as object) ?? {}),
     posts: (row.posts as OwnerConfig['posts']) ?? ownerConfig.posts,
-    membershipPage: Object.assign({}, ownerConfig.membershipPage, (row.membership_page as object) ?? {}),
-    donatePage: Object.assign({}, ownerConfig.donatePage, (row.donate_page as object) ?? {}),
     adminPermissions: (row.admin_permissions as AdminPermissions) ?? defaultAdminPermissions,
-    commissionsConfig: Object.assign({}, defaultCommissionsConfig, (row.commissions_config as object) ?? {}),
   };
 };
 
@@ -56,35 +39,10 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const saveGoals = async (goals: GoalItem[]) => {
-    await ensureAuth();
-    setConfig((c) => ({ ...c, goals }));
-    await supabase.from('support_config').update({ goals }).eq('id', 1);
-  };
-
-  const saveMembership = async (membership: OwnerConfig['membership']) => {
-    await ensureAuth();
-    setConfig((c) => ({ ...c, membership }));
-    await supabase.from('support_config').update({ membership }).eq('id', 1);
-  };
-
-  const saveDonation = async (donation: OwnerConfig['donation']) => {
-    await ensureAuth();
-    setConfig((c) => ({ ...c, donation }));
-    await supabase.from('support_config').update({ donation }).eq('id', 1);
-  };
-
   const savePosts = async (posts: OwnerConfig['posts']) => {
     await ensureAuth();
     setConfig((c) => ({ ...c, posts }));
     await supabase.from('support_config').update({ posts }).eq('id', 1);
-  };
-
-  const savePageContent = async (field: 'membershipPage' | 'donatePage', data: { headline: string; subheading: string }) => {
-    await ensureAuth();
-    setConfig((c) => ({ ...c, [field]: data }));
-    const col = field === 'membershipPage' ? 'membership_page' : 'donate_page';
-    await supabase.from('support_config').update({ [col]: data }).eq('id', 1);
   };
 
   const saveAdminPermissions = async (adminPermissions: AdminPermissions) => {
@@ -93,14 +51,8 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await supabase.from('support_config').update({ admin_permissions: adminPermissions }).eq('id', 1);
   };
 
-  const saveCommissions = async (commissionsConfig: CommissionsConfig) => {
-    await ensureAuth();
-    setConfig((c) => ({ ...c, commissionsConfig }));
-    await supabase.from('support_config').update({ commissions_config: commissionsConfig }).eq('id', 1);
-  };
-
   return (
-    <SupportContext.Provider value={{ config, saveGoals, saveMembership, saveDonation, savePosts, savePageContent, saveAdminPermissions, saveCommissions, loading }}>
+    <SupportContext.Provider value={{ config, savePosts, saveAdminPermissions, loading }}>
       {children}
     </SupportContext.Provider>
   );

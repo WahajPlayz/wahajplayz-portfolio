@@ -1,7 +1,7 @@
 import { applyCors, handleOptions } from '../_lib/cors.js';
 import { verifyIdToken, getDb } from '../_lib/admin.js';
 import { getStripe, getAppUrl, normalizeCurrency, buildPriceData } from '../_lib/stripe.js';
-import { getStoreProduct, getSupportConfig } from '../_lib/data.js';
+import { getStoreProduct } from '../_lib/data.js';
 import { readJson, sendError } from '../_lib/http.js';
 
 const ALL_SHIPPING_COUNTRIES = [
@@ -53,21 +53,6 @@ export default async function handler(req, res) {
     const currency = normalizeCurrency(body.currency);
     if (items.length === 0) {
       return sendError(res, 400, 'At least one cart item is required.');
-    }
-
-    // Check per-tier membership discount — take the best discount across active tiers
-    let memberDiscount = 0;
-    const { data: memberships } = await getDb().from('memberships').select('tier_id, status').eq('user_id', decodedToken.uid);
-    if (memberships && memberships.length > 0) {
-      const supportConfig = await getSupportConfig();
-      const tiers = supportConfig?.membership?.tiers || [];
-      for (const m of memberships) {
-        if (m.status !== 'active') continue;
-        const tier = tiers.find(t => t.id === m.tier_id);
-        if (tier?.storeDiscountPercent > 0) {
-          memberDiscount = Math.max(memberDiscount, tier.storeDiscountPercent);
-        }
-      }
     }
 
     const cartItems = [];
@@ -144,16 +129,14 @@ export default async function handler(req, res) {
         hasPhysical: hasPhysical ? 'true' : 'false',
       },
       line_items: await Promise.all(cartItems.map(async ({ product, quantity, variantLabel }) => {
-        const salePrice = applyDiscount(product.price, product.salePercent || 0);
-        const finalPrice = applyDiscount(salePrice, memberDiscount);
-        const discountNote = memberDiscount > 0 ? ` [Member ${memberDiscount}% off]` : '';
+        const finalPrice = applyDiscount(product.price, product.salePercent || 0);
         return {
           quantity,
           price_data: await buildPriceData({
             amountInBaseCurrency: finalPrice,
             currency,
             name: product.name,
-            description: variantLabel ? `${product.description} (${variantLabel})${discountNote}` : `${product.description}${discountNote}`,
+            description: variantLabel ? `${product.description} (${variantLabel})` : product.description,
           }),
         };
       })),

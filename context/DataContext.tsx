@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase, ensureAuth, getAuthToken } from '../lib/supabase';
+import { supabase, ensureAuth } from '../lib/supabase';
 import { FAQItem, RoadmapProject, AppUser, JoinRequest, TeamTask, TaskChecklist, TaskColumn } from '../types';
 import { AdminPermissions, defaultAdminPermissions } from '../config/ownerConfig';
 import {
@@ -74,25 +74,6 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 const OWNER_SESSION_KEY = 'wahaj_owner_verified';
-
-const apiBase = (import.meta.env.VITE_STRIPE_API_BASE || '').replace(/\/$/, '');
-
-const claimDiscordRoles = async (discordId: string) => {
-  const flagKey = `discord_roles_claimed_${discordId}`;
-  if (localStorage.getItem(flagKey)) return;
-  try {
-    const token = await getAuthToken();
-    if (!token) return;
-    const res = await fetch(`${apiBase}/api/discord/claim-roles`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: '{}',
-    });
-    if (res.ok) localStorage.setItem(flagKey, '1');
-  } catch (error) {
-    console.warn('Failed to claim Discord roles:', error);
-  }
-};
 
 const INITIAL_FAQ: FAQItem[] = [
   {
@@ -304,7 +285,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           if (linkedAuthId) ownerPayload.auth_user_id = linkedAuthId;
           await supabase.from('discord_users').upsert(ownerPayload);
-          if (linkedAuthId) claimDiscordRoles(user.id);
         } catch (error) {
           console.error('Failed to sync owner user record:', error);
         }
@@ -361,7 +341,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setRole('pending');
           setPortalSyncError('');
         }
-        if (linkedAuthId) claimDiscordRoles(user.id);
       };
 
       try {

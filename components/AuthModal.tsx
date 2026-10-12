@@ -64,7 +64,7 @@ const AuthModal: React.FC = () => {
         </h2>
         <p className="text-gray-500 text-xs font-mono mb-6">
           {mode === 'signin'
-            ? 'Sign in to access membership perks, posts, and community features.'
+            ? 'Sign in to access the store, posts, and community features.'
             : 'Create an account to get started.'}
         </p>
 

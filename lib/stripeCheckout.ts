@@ -75,57 +75,6 @@ export const startStoreCheckout = async (
   redirectToCheckout(data.url);
 };
 
-// ── DONATION (Stripe — unchanged) ────────────────────────────────────────────
-export const startDonationCheckout = async (amount: number, currency: string, message: string, username?: string) => {
-  const returnOrigin = window.location.origin;
-  const data = await postJson<{ url?: string }>('/api/stripe/create-donation-session', { amount, currency, message, username, returnOrigin });
-  redirectToCheckout(data.url);
-};
-
-// ── COMMISSION (Polar) ────────────────────────────────────────────────────────
-export const startCommissionCheckout = async (
-  serviceName: string,
-  basePrice: number,
-  description: string,
-  contact: string,
-  currency?: string,
-  pricesByCurrency?: Record<string, number>,
-) => {
-  const returnOrigin = window.location.origin;
-  const data = await postJson<{ url?: string }>(
-    '/api/polar/create-commission-session',
-    { serviceName, basePrice, description, contact, returnOrigin, currency, pricesByCurrency },
-  );
-  redirectToCheckout(data.url);
-};
-
-// ── MEMBERSHIP (Polar) ────────────────────────────────────────────────────────
-export const startMembershipCheckout = async (
-  tierId: string,
-  billing: 'monthly' | 'yearly' | 'lifetime',
-  currency: string,
-  pricesByCurrency?: Record<string, number>,
-) => {
-  const data = await postJson<{ url?: string }>(
-    '/api/polar/create-membership-session',
-    { tierId, billing, currency, pricesByCurrency },
-    true,
-  );
-  redirectToCheckout(data.url);
-};
-
-// ── MEMBERSHIP PORTAL (Polar for new subscribers, Stripe for legacy) ──────────
-export const openMembershipBillingPortal = async (subscriptionId?: string) => {
-  // Legacy Stripe subscribers have subscription IDs starting with "sub_"
-  if (subscriptionId?.startsWith('sub_')) {
-    const data = await postJson<{ url?: string }>('/api/stripe/create-billing-portal-session', {}, true);
-    redirectToCheckout(data.url);
-  } else {
-    const data = await postJson<{ url?: string }>('/api/polar/create-customer-portal-session', {}, true);
-    redirectToCheckout(data.url);
-  }
-};
-
 // ── DIGITAL DOWNLOAD (supports both Polar checkout_id and Stripe session_id) ──
 export const verifyDigitalCheckout = async (
   opts: { checkoutId?: string; sessionId?: string },
@@ -140,13 +89,6 @@ export const verifyDigitalCheckout = async (
     '/api/stripe/verify-digital-session', { sessionId: opts.sessionId }, true
   );
 };
-
-export const verifyMembershipCheckout = async (checkoutId: string) =>
-  postJson<{ status: string; tierId: string | null; billing: string | null }>(
-    '/api/polar/verify-membership-session',
-    { checkoutId },
-    true,
-  );
 
 export const fetchDigitalDownloadUrl = async (productId: string) => {
   return postJson<{ url: string }>('/api/stripe/download-url', { productId }, true);
