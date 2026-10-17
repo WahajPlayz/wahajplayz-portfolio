@@ -17,6 +17,11 @@ export const getDiscordAvatarUrl = (user: DiscordUser): string => {
 };
 
 export const redirectToDiscordOAuth = (): void => {
+  if (!DISCORD_CLIENT_ID) {
+    window.alert('Discord sign-in is not configured. Add VITE_DISCORD_CLIENT_ID to .env.local and register this site origin in the Discord Developer Portal.');
+    return;
+  }
+
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     redirect_uri: DISCORD_REDIRECT_URI,

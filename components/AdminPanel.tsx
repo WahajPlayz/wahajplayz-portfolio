@@ -3,7 +3,7 @@ import { useData } from '../context/DataContext';
 import { useSupportData } from '../context/SupportContext';
 import { useStore } from '../context/StoreContext';
 import { StoreProduct, StoreConfig } from '../config/storeConfig';
-import { AdminPermissions } from '../config/ownerConfig';
+import { AdminPermissions, SocialLink, SocialPlatform } from '../config/ownerConfig';
 import { X, Plus, Trash2, Check, Crown, Save, FolderPlus, Layers, Type, Users, ChevronUp, ChevronDown, LogOut, Shield, UserCheck, UserX, Clock, Pencil, ShoppingBag, Search, MessageSquare, Send, Gamepad2, Sparkles, Wrench, Zap, Code, ListChecks, Map } from 'lucide-react';
 import { ensureAuth, getAuthToken, supabase, FUNCTIONS_URL } from '../lib/supabase';
 import { uploadToGitHub } from '../lib/githubStorage';
@@ -80,13 +80,14 @@ const moveInArray = (ids: string[], id: string, direction: 'up' | 'down') => {
 const buildAvatarUrl = (discordId: string, avatar: string | null) =>
   avatar ? `https://cdn.discordapp.com/avatars/${discordId}/${avatar}.png?size=128` : null;
 const OWNER_SESSION_KEY = 'wahaj_owner_verified';
-const permissionOrder: (keyof AdminPermissions)[] = ['roadmap', 'faq', 'members', 'requests', 'posts', 'store'];
+const permissionOrder: (keyof AdminPermissions)[] = ['roadmap', 'faq', 'members', 'requests', 'posts', 'social', 'store'];
 const permissionLabels: Record<keyof AdminPermissions, { title: string; description: string }> = {
   roadmap: { title: 'Roadmap & Projects', description: 'Edit roadmap projects, sections, and task progress.' },
   faq: { title: 'FAQ Manager', description: 'Create and remove FAQ entries.' },
   members: { title: 'Members', description: 'View members and manage their assigned projects.' },
   requests: { title: 'Requests', description: 'Approve or reject incoming team portal requests.' },
   posts: { title: 'Posts', description: 'Create, edit, and publish posts.' },
+  social: { title: 'Social Links', description: 'Manage homepage social links.' },
   store: { title: 'Store', description: 'Manage storefront products and digital delivery assets.' },
 };
 
@@ -130,7 +131,7 @@ const AdminPanel: React.FC = () => {
     removeUser,
   } = useData();
 
-  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'posts' | 'store' | 'orders' | 'permissions'>('roadmap');
+  const [activeTab, setActiveTab] = useState<'roadmap' | 'faq' | 'members' | 'requests' | 'posts' | 'social' | 'store' | 'orders' | 'permissions'>('roadmap');
   const [roadmapSubTab, setRoadmapSubTab] = useState<'roadmap' | 'board'>('roadmap');
   const [boardProjectId, setBoardProjectId] = useState<string>('');
   const [newFaqQ, setNewFaqQ] = useState('');
@@ -171,6 +172,10 @@ const AdminPanel: React.FC = () => {
     setPasswordError('');
 
     try {
+      if (!FUNCTIONS_URL) {
+        throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local, then restart Vite.');
+      }
+
       const response = await fetch(`${FUNCTIONS_URL}/verify-owner-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -197,8 +202,29 @@ const AdminPanel: React.FC = () => {
   };
 
   // Support data
-  const { config, savePosts, saveAdminPermissions } = useSupportData();
+  const { config, savePosts, saveSocialLinks: persistSocialLinks, saveAdminPermissions } = useSupportData();
   const [approveAdminPermissions, setApproveAdminPermissions] = useState<AdminPermissions>(config.adminPermissions);
+  const [socialLinksDraft, setSocialLinksDraft] = useState<SocialLink[]>(config.socialLinks);
+  useEffect(() => { setSocialLinksDraft(config.socialLinks); }, [config.socialLinks]);
+
+  const addSocialLink = () => {
+    setSocialLinksDraft(prev => [
+      ...prev,
+      { id: `social-${Date.now()}`, label: 'New Link', url: 'https://', platform: 'website', enabled: true },
+    ]);
+  };
+
+  const updateSocialLink = (id: string, patch: Partial<SocialLink>) => {
+    setSocialLinksDraft(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  const handleSaveSocialLinks = async () => {
+    const cleaned = socialLinksDraft
+      .map((link) => ({ ...link, label: link.label.trim(), url: link.url.trim() }))
+      .filter((link) => link.label || link.url);
+
+    await persistSocialLinks(cleaned.length ? cleaned : []);
+  };
 
   // Store data
   const { config: storeConfig, saveStore } = useStore();
@@ -591,6 +617,14 @@ const AdminPanel: React.FC = () => {
                       className={`px-4 py-2 rounded-lg transition-colors font-medium capitalize ${activeTab === 'posts' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
                     >
                       Posts
+                    </button>
+                  )}
+                  {canAccessTab('social') && (
+                    <button
+                      onClick={() => setActiveTab('social')}
+                      className={`px-4 py-2 rounded-lg transition-colors font-medium capitalize ${activeTab === 'social' ? 'bg-cyan-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      Social
                     </button>
                   )}
                   {canAccessTab('store') && (
@@ -1398,6 +1432,119 @@ const AdminPanel: React.FC = () => {
                 </div>
               );
             })()}
+
+            {activeTab === 'social' && (
+              <div className="space-y-6 pb-12">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Homepage social links</h3>
+                    <p className="text-sm text-gray-500">Update the buttons shown on the home page and footer.</p>
+                  </div>
+                  <button
+                    onClick={addSocialLink}
+                    className="flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-sm font-bold text-cyan-300"
+                  >
+                    <Plus size={14} /> Add Link
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {socialLinksDraft.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-white/10 bg-black/20 p-8 text-center text-gray-500">
+                      No social links yet. Add one to start showing buttons on the home page.
+                    </div>
+                  ) : (
+                    socialLinksDraft.map((link, index) => (
+                      <div key={link.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                        <div className="grid gap-3 md:grid-cols-[1.2fr_1.4fr_1fr_auto_auto] items-center">
+                          <select
+                            value={link.platform}
+                            onChange={(e) => updateSocialLink(link.id, { platform: e.target.value as SocialPlatform })}
+                            className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500"
+                          >
+                            <option value="youtube">YouTube</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="discord">Discord</option>
+                            <option value="instagram">Instagram</option>
+                            <option value="x">X / Twitter</option>
+                            <option value="twitch">Twitch</option>
+                            <option value="github">GitHub</option>
+                            <option value="website">Website</option>
+                          </select>
+
+                          <input
+                            value={link.label}
+                            onChange={(e) => updateSocialLink(link.id, { label: e.target.value })}
+                            placeholder="Label"
+                            className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500"
+                          />
+
+                          <input
+                            value={link.url}
+                            onChange={(e) => updateSocialLink(link.id, { url: e.target.value })}
+                            placeholder="https://..."
+                            className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-cyan-500 md:col-span-1"
+                          />
+
+                          <label className="inline-flex items-center gap-2 text-xs text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={link.enabled !== false}
+                              onChange={(e) => updateSocialLink(link.id, { enabled: e.target.checked })}
+                              className="w-4 h-4 accent-cyan-500"
+                            />
+                            Show
+                          </label>
+
+                          <div className="flex items-center gap-1 justify-end">
+                            <button
+                              onClick={() => setSocialLinksDraft(prev => {
+                                const next = [...prev];
+                                if (index === 0) return prev;
+                                [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                                return next;
+                              })}
+                              disabled={index === 0}
+                              className="p-2 text-gray-400 hover:text-white disabled:opacity-30"
+                              title="Move earlier"
+                            >
+                              <ChevronUp size={14} />
+                            </button>
+                            <button
+                              onClick={() => setSocialLinksDraft(prev => {
+                                const next = [...prev];
+                                if (index === next.length - 1) return prev;
+                                [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                                return next;
+                              })}
+                              disabled={index === socialLinksDraft.length - 1}
+                              className="p-2 text-gray-400 hover:text-white disabled:opacity-30"
+                              title="Move later"
+                            >
+                              <ChevronDown size={14} />
+                            </button>
+                            <button
+                              onClick={() => setSocialLinksDraft(prev => prev.filter(item => item.id !== link.id))}
+                              className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg"
+                              title="Remove"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <button
+                  onClick={() => void handleSaveSocialLinks()}
+                  className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-bold text-cyan-300 transition-colors hover:bg-cyan-500/20"
+                >
+                  <Save size={14} /> Save Social Links
+                </button>
+              </div>
+            )}
 
             {activeTab === 'permissions' && isOwner && (
               <div className="space-y-6 pb-12">

@@ -5,6 +5,7 @@ import { ownerConfig, OwnerConfig, AdminPermissions, defaultAdminPermissions } f
 interface SupportContextType {
   config: OwnerConfig;
   savePosts: (posts: OwnerConfig['posts']) => Promise<void>;
+  saveSocialLinks: (socialLinks: OwnerConfig['socialLinks']) => Promise<void>;
   saveAdminPermissions: (perms: AdminPermissions) => Promise<void>;
   loading: boolean;
 }
@@ -15,6 +16,7 @@ const rowToConfig = (row: Record<string, unknown> | null): OwnerConfig => {
   if (!row) return ownerConfig;
   return {
     posts: (row.posts as OwnerConfig['posts']) ?? ownerConfig.posts,
+    socialLinks: (row.social_links as OwnerConfig['socialLinks']) ?? ownerConfig.socialLinks,
     adminPermissions: (row.admin_permissions as AdminPermissions) ?? defaultAdminPermissions,
   };
 };
@@ -45,6 +47,12 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await supabase.from('support_config').update({ posts }).eq('id', 1);
   };
 
+  const saveSocialLinks = async (socialLinks: OwnerConfig['socialLinks']) => {
+    await ensureAuth();
+    setConfig((c) => ({ ...c, socialLinks }));
+    await supabase.from('support_config').update({ social_links: socialLinks }).eq('id', 1);
+  };
+
   const saveAdminPermissions = async (adminPermissions: AdminPermissions) => {
     await ensureAuth();
     setConfig((c) => ({ ...c, adminPermissions }));
@@ -52,7 +60,7 @@ export const SupportProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   return (
-    <SupportContext.Provider value={{ config, savePosts, saveAdminPermissions, loading }}>
+    <SupportContext.Provider value={{ config, savePosts, saveSocialLinks, saveAdminPermissions, loading }}>
       {children}
     </SupportContext.Provider>
   );

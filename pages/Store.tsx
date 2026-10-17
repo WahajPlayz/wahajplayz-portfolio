@@ -47,10 +47,10 @@ const Store: React.FC = () => {
 
       <div className="max-w-7xl mx-auto px-6 py-12">
         <div className="rounded-xl border px-4 py-3 text-sm mb-6" style={{ borderColor: 'rgba(168,85,247,0.2)', background: 'rgba(168,85,247,0.06)', color: '#dfc4ff' }}>
-          Select a product to view details, choose variants, and add it to your cart. Checkout is only available from the cart drawer.
+          Browse products, compare options, and add items to your cart from the product page.
         </div>
 
-        <div className="flex flex-col md:flex-row gap-4 mb-8">
+        <div className="flex flex-col gap-4 mb-8 md:flex-row md:items-center">
           <div className="flex flex-wrap gap-2 flex-1">
             {(['all', ...allCategories]).map(tab => (
               <button
@@ -65,20 +65,20 @@ const Store: React.FC = () => {
               </button>
             ))}
           </div>
-          <div className="flex gap-3">
-            <div className="relative">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-40">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" />
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search..."
-                className="pl-8 pr-4 py-2 bg-black/30 border border-white/10 text-white text-xs font-mono outline-none focus:border-cyan-500/50 w-40"
+                className="w-full pl-8 pr-4 py-2 bg-black/30 border border-white/10 text-white text-xs font-mono outline-none focus:border-cyan-500/50"
               />
             </div>
             <select
               value={sort}
               onChange={e => setSort(e.target.value as 'featured' | 'price-asc' | 'price-desc')}
-              className="px-3 py-2 bg-black/30 border border-white/10 text-gray-400 text-xs font-mono outline-none focus:border-cyan-500/50"
+              className="w-full px-3 py-2 bg-black/30 border border-white/10 text-gray-400 text-xs font-mono outline-none focus:border-cyan-500/50 sm:w-auto"
             >
               <option value="featured">Featured</option>
               <option value="price-asc">Price up</option>

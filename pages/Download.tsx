@@ -35,62 +35,27 @@ const DownloadPage: React.FC = () => {
 
   useEffect(() => {
     if (!product) return;
+
     if (product.id === TEST_PRODUCT.id) {
       setResolvedUrl(TEST_PRODUCT.digitalFileUrl);
       setLoadingState('ready');
       return;
     }
 
-    const verificationId = checkoutId || sessionId;
-
-    if (!verificationId) {
-      if (product.digitalFileUrl) {
-        setResolvedUrl(product.digitalFileUrl);
-        setLoadingState('ready');
-      } else {
-        setLoadingState('error');
-        setErrorMessage('This product is missing a download file.');
-      }
-      return;
-    }
-
-    if (authLoading) return;
-    if (!user) {
+    if (checkoutId || sessionId) {
       setLoadingState('error');
-      setErrorMessage('Sign in with the same account you used for checkout to unlock the download.');
+      setErrorMessage('Download checkout has been disabled in this version of the app.');
       return;
     }
 
-    let cancelled = false;
-    const verifyAndLoad = async () => {
-      setLoadingState('verifying');
-      setErrorMessage('');
-      try {
-        const result = await verifyDigitalCheckout(
-          checkoutId ? { checkoutId } : { sessionId: sessionId ?? undefined },
-          product.id,
-        );
-        if (result.status !== 'paid') {
-          throw new Error('Payment verification is still pending.');
-        }
-        const data = await fetchDigitalDownloadUrl(product.id);
-        if (!cancelled) {
-          setResolvedUrl(data.url);
-          setLoadingState('ready');
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setLoadingState('error');
-          setErrorMessage(error instanceof Error ? error.message : 'Failed to verify the purchase.');
-        }
-      }
-    };
-
-    void verifyAndLoad();
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, checkoutId, product, sessionId, user]);
+    if (product.digitalFileUrl) {
+      setResolvedUrl(product.digitalFileUrl);
+      setLoadingState('ready');
+    } else {
+      setLoadingState('error');
+      setErrorMessage('This product is missing a download file.');
+    }
+  }, [checkoutId, product, sessionId]);
 
   useEffect(() => {
     if (!resolvedUrl || loadingState !== 'ready') return;

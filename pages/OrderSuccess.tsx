@@ -37,24 +37,8 @@ const OrderSuccessPage: React.FC = () => {
       return;
     }
 
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const summary = await fetchOrderSummary(sessionId);
-        if (!cancelled) {
-          setOrder(summary);
-          setLoading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Could not load order details.');
-          setLoading(false);
-        }
-      }
-    };
-
-    void load();
-    return () => { cancelled = true; };
+    setError('Order tracking is disabled in this build.');
+    setLoading(false);
   }, [sessionId]);
 
   const renderBody = () => {

@@ -143,7 +143,7 @@ const StoreProductDetail: React.FC = () => {
 
       <div className="max-w-7xl mx-auto px-6 py-12">
         {/* Main grid */}
-        <div className="grid gap-12 lg:grid-cols-[1.1fr_1fr] lg:items-start">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start">
 
           {/* Left — gallery */}
           <div>
@@ -181,7 +181,7 @@ const StoreProductDetail: React.FC = () => {
               {product.category && <span className="font-mono text-xs text-gray-600">{product.category}</span>}
             </div>
 
-            <h1 className="font-orbitron font-black text-3xl md:text-4xl text-white mb-4">{product.name}</h1>
+            <h1 className="font-orbitron font-black text-3xl md:text-4xl text-white mb-4 break-words">{product.name}</h1>
 
             {/* Price */}
             <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -212,7 +212,7 @@ const StoreProductDetail: React.FC = () => {
 
             {/* Description */}
             {product.description && (
-              <p className="text-gray-400 font-mono text-sm leading-relaxed mb-6">{product.description}</p>
+              <p className="text-gray-400 font-mono text-sm leading-relaxed mb-6 break-words">{product.description}</p>
             )}
 
             {/* Features */}
