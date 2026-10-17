@@ -1,0 +1,1 @@
+Hi I have made a website by doing Vibe coding, This is not my actual code is mostly AI. Please dont consider any code in this project mine I have Vibecoded this website there may be some error code in this project
